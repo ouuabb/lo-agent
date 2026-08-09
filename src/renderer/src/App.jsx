@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import DocViewer from './docs/DocViewer.jsx';
 import './App.css';
 
@@ -147,7 +147,12 @@ export default function App() {
           </button>
         </aside>
         <aside className={collapsed ? 'app-sidebar collapsed' : 'app-sidebar'}>
-          <nav className="sidebar-nav" />
+          <ResourceExplorer
+            notes={notes}
+            busy={busy}
+            authenticated={authenticated}
+            onRefresh={handleRefresh}
+          />
         </aside>
 
       <main className="app-content">
@@ -318,6 +323,74 @@ function WorkspacePanel(props) {
         )}
       </section>
     </>
+  );
+}
+
+function ResourceExplorer(props) {
+  const { notes, busy, authenticated, onRefresh } = props;
+  const [active, setActive] = useState(null);
+
+  const groups = useMemo(() => {
+    const m = {};
+    notes.forEach((n) => {
+      const type = n.type || 'resource';
+      (m[type] = m[type] || []).push(n);
+    });
+    return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0]));
+  }, [notes]);
+
+  return (
+    <div className="sidebar-explore">
+      <div className="explore-head">
+        <span className="explore-title">资源</span>
+        <button
+          className="explore-refresh"
+          type="button"
+          title="刷新资源库"
+          aria-label="刷新"
+          onClick={onRefresh}
+          disabled={busy}
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
+          </svg>
+        </button>
+      </div>
+      <nav className="explore-list">
+        {groups.map(([type, items]) => (
+          <div className="explore-group" key={type}>
+            <div className="explore-group-title">{type}</div>
+            {items.map((n) => (
+              <button
+                key={n.rid}
+                type="button"
+                className={`explore-item ${active === n.rid ? 'active' : ''}`}
+                onClick={() => setActive(n.rid)}
+                title={n.rid}
+              >
+                <span className="explore-name">
+                  {(n.metadata && n.metadata.title) || n.name || n.rid}
+                </span>
+              </button>
+            ))}
+          </div>
+        ))}
+        {!busy && groups.length === 0 && (
+          <p className="empty">{authenticated ? '暂无资源' : '未登录，点击顶栏指示灯登录'}</p>
+        )}
+      </nav>
+    </div>
   );
 }
 
