@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta
+    http-equiv="Content-Security-Policy"
+    content="default-src 'self'; style-src 'self' 'unsafe-inline'"
+  />
+  <title>lo Agent</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+      background: var(--bg, #1e1e1e);
+      color: var(--fg, #e8e8e8);
+    }
+    .app {
+      text-align: center;
+    }
+    h1 {
+      font-size: 1.6rem;
+      margin-bottom: 0.4rem;
+    }
+    p {
+      opacity: 0.7;
+    }
+    code {
+      background: rgba(127, 127, 127, 0.2);
+      padding: 0.1em 0.4em;
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <h1>lo Agent</h1>
+    <p>Electron 桌面端基础架子已就绪。</p>
+    <p>preload 版本：<code id="version">-</code></p>
+  </div>
+  <script>
+    document.getElementById('version').textContent = window.loAgent.version;
+  </script>
+</body>
+</html>
