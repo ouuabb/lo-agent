@@ -1,7 +1,8 @@
 # lo-agent
 
 lo Agent 桌面端（Electron）。通过 `@lo/client` 连接 lo 核心（`log serve` 的 HTTP 协议），
-实现仓库地址配置、SSH 登录、状态查看与资源浏览。
+实现仓库地址配置、SSH 登录、状态查看与资源浏览。内置离线文档系统
+（`react-markdown` 渲染，菜单「文档」入口）。
 
 ## 功能
 
@@ -9,6 +10,7 @@ lo Agent 桌面端（Electron）。通过 `@lo/client` 连接 lo 核心（`log s
 - **登录 / 认证**：SSH 挑战-应答（`login({ privateKeyPath })` 或手动 `nonce/signature/fingerprint`）
 - **仓库状态**：`GET /api/stats`（资源数、关系数等）
 - **资源列表**：`GET /api/notes`（分页 / 类型过滤）
+- **内置文档**：菜单「文档」入口，`react-markdown` 渲染 `src/renderer/src/docs/content/`
 
 ## 开发
 
