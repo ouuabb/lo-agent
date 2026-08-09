@@ -4,15 +4,16 @@
  * 职责：
  *   - 生命周期编排（load → activate → deactivate → dispose）
  *   - 插件注册表（id → 实例）
- *   - 构造插件 Context（注入 host API / logger / config）
+ *   - 构造插件 Context（注入 loImpl / logger / config）
+ *   - 收集插件 contributes → 注册到 ExtensionRegistry
  *
  * 边界：
- *   - 插件经 ctx.host 调用 Host API；Host 内部经 @lo/client 访问 Core
+ *   - 插件经 ctx.lo（SDK 契约）调用 Host Adapter；Host 内部经 @lo/client 访问 Core
  *   - 插件不能直接访问 lo Core HTTP
  */
 const { PluginLoader } = require('./plugin-loader.cjs');
 const { createLoImpl } = require('./lo-adapter.cjs');
-const { fromHost, AgentPluginContext } = require('@lo/agent-plugins-sdk');
+const { fromHost, AgentPluginContext, parseContributes } = require('@lo/agent-plugins-sdk');
 
 class PluginManager {
   /**
@@ -20,6 +21,7 @@ class PluginManager {
    * @param {string} options.pluginsDir — 插件根目录
    * @param {string} options.hostRequireBase — 解析 SDK 的基准路径
    * @param {import('../lo-core.cjs')} options.loCore — LoCoreService
+   * @param {import('./extension-registry.cjs')} [options.extensionRegistry]
    * @param {object} [options.logger] — 宿主 logger
    */
   constructor(options) {
@@ -27,6 +29,8 @@ class PluginManager {
     this.loCore = options.loCore;
     this.logger = options.logger || console;
     this.loader = new PluginLoader(options.pluginsDir, options.hostRequireBase);
+    /** @type {import('./extension-registry.cjs')} */
+    this.extensionRegistry = options.extensionRegistry || null;
     /** @type {Map<string, { plugin, manifest, dir, state }>} */
     this._registry = new Map();
   }
@@ -56,6 +60,11 @@ class PluginManager {
     try {
       await entry.plugin.activate(ctx);
       entry.state = 'activated';
+      // 收集插件 contributes → 注册扩展点（纯数据）
+      if (this.extensionRegistry) {
+        const points = parseContributes(entry.manifest);
+        entry.extensionPoints = this.extensionRegistry.registerAll(points);
+      }
     } catch (e) {
       console.error(`[plugin] 激活失败 ${id}: ${e.message}`);
       throw e;
@@ -102,6 +111,10 @@ class PluginManager {
     if (!entry) return;
     if (typeof entry.plugin.dispose === 'function') {
       await entry.plugin.dispose();
+    }
+    // 清理该插件注册的扩展点
+    if (this.extensionRegistry) {
+      this.extensionRegistry.unregisterByPlugin(id);
     }
     this._registry.delete(id);
   }

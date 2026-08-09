@@ -2,6 +2,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { PluginManager } = require('../../src/main/plugin/plugin-manager.cjs');
+const { ExtensionRegistry } = require('../../src/main/plugin/extension-registry.cjs');
 
 function makeLoCore() {
   return {
@@ -176,5 +177,56 @@ describe('PluginManager', () => {
     expect(plugin._deactivated).toBe(true);
     await pm.dispose('demo-c');
     expect(pm.get('demo-c')).toBeNull();
+  });
+
+  it('激活时收集 contributes 注册扩展点，dispose 时清理', async () => {
+    const dir = makePluginsDir();
+    const pluginDir = writePlugin(dir, 'demo-ext', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-ext', name: 'Demo Ext', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;
+    `);
+    // 覆写 plugin.json 加 contributes
+    fs.writeFileSync(
+      path.join(pluginDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'demo-ext',
+        name: 'Demo Ext',
+        version: '0.1.0',
+        main: 'index.cjs',
+        contributes: {
+          commands: [{ id: 'demo-ext.open', title: '打开' }],
+          views: [{ id: 'demo-ext.status', title: '状态', type: 'panel' }],
+        },
+      }),
+    );
+
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.activate('demo-ext');
+
+    // 激活后扩展点已注册
+    expect(reg.count()).toBe(2);
+    expect(reg.list('commands')).toHaveLength(1);
+    expect(reg.list('views')).toHaveLength(1);
+    const points = reg.listByPlugin('demo-ext');
+    expect(points.map((p) => `${p.type}:${p.id}`).sort()).toEqual([
+      'commands:demo-ext.open',
+      'views:demo-ext.status',
+    ]);
+
+    // dispose 后清理
+    await pm.dispose('demo-ext');
+    expect(reg.count()).toBe(0);
+    expect(reg.listByPlugin('demo-ext')).toEqual([]);
   });
 });

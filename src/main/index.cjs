@@ -10,6 +10,7 @@ const { LoCoreService } = require('./lo-core.cjs');
 const { ConfigStore } = require('./config-store.cjs');
 const { registerLoCoreIpc } = require('./ipc.cjs');
 const { PluginManager } = require('./plugin/plugin-manager.cjs');
+const { ExtensionRegistry } = require('./plugin/extension-registry.cjs');
 
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
@@ -30,12 +31,15 @@ function initLoCore() {
 }
 
 function initPlugins() {
+  const extensionRegistry = new ExtensionRegistry();
   pluginManager = new PluginManager({
     pluginsDir: path.join(app.getPath('userData'), 'plugins'),
     hostRequireBase: __dirname,
     loCore: loCoreService,
+    extensionRegistry,
     logger: console,
   });
+  pluginManager.extensionRegistry = extensionRegistry;
 }
 
 function registerWindowControls() {
