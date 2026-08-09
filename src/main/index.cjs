@@ -4,10 +4,21 @@
  * 开发模式（ELECTRON_RENDERER_URL 存在时）加载 Vite dev server；
  * 生产模式加载构建产物 dist/index.html。
  */
-const { app, BrowserWindow, shell } = require('electron');
+const { app, BrowserWindow, shell, ipcMain } = require('electron');
 const path = require('path');
+const { LoCoreService } = require('./lo-core.cjs');
+const { ConfigStore } = require('./config-store.cjs');
+const { registerLoCoreIpc } = require('./ipc.cjs');
 
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
+
+let loCoreService = null;
+
+function initLoCore() {
+  const store = new ConfigStore(app.getPath('userData'));
+  loCoreService = new LoCoreService({ loadConfig: () => store.load() });
+  registerLoCoreIpc(ipcMain, loCoreService);
+}
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -35,6 +46,7 @@ function createWindow() {
 }
 
 app.whenReady().then(() => {
+  initLoCore();
   createWindow();
 
   app.on('activate', () => {

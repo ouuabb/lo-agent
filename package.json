@@ -44,6 +44,7 @@
     "vite": "^6.4.3"
   },
   "dependencies": {
+    "@lo/client": "file:../lo-client-sdk",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   }

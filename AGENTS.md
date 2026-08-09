@@ -5,7 +5,16 @@
 ## 项目概况
 
 lo Agent 是 lo（log）知识库的 Electron 桌面端。它与 `log`（lo Core）同级，
-通过 Electron 主进程与 lo 的 HTTP/CLI 集成 agent 功能（待开发）。
+通过 Electron 主进程 + `@lo/client`（本地 SDK）连接 lo 核心的 HTTP/SSH 协议：
+配置仓库地址、SSH 挑战-应答登录、获取仓库状态与资源列表。
+
+## 主进程 ↔ 核心
+
+- `src/main/lo-core.cjs`：`LoCoreService` 封装 `@lo/client`（configure/login/getStatus/listNotes/logout），
+  方法返回 `{ ok, ... }` 或 `{ ok:false, error, message }`，便于跨 IPC 序列化。
+- `src/main/ipc.cjs`：白名单通道 `lo-core:*`（config/configure/login/status/list-notes/logout）。
+- `src/main/config-store.cjs`：配置持久化到 `userData/lo-agent.json`。
+- preload `window.loAgent.loCore` 仅暴露上述方法（`ipcRenderer.invoke`）。
 
 ## 技术栈与约定
 

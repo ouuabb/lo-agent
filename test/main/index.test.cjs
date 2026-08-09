@@ -9,6 +9,8 @@ jest.mock('electron', () => {
   const mockQuit = jest.fn();
   const mockWhenReady = jest.fn();
   const mockAppOn = jest.fn();
+  const mockGetPath = jest.fn(() => '/fake/userData');
+  const mockIpcHandle = jest.fn();
   mockWhenReady.mockResolvedValue(undefined);
   mockGetAllWindows.mockReturnValue([]);
 
@@ -24,11 +26,13 @@ jest.mock('electron', () => {
       whenReady: mockWhenReady,
       on: mockAppOn,
       quit: mockQuit,
+      getPath: mockGetPath,
     },
     BrowserWindow: Object.assign(MockBrowserWindow, {
       getAllWindows: mockGetAllWindows,
     }),
     shell: { openExternal: mockOpenExternal },
+    ipcMain: { handle: mockIpcHandle },
     __mocks: {
       mockLoadFile,
       mockLoadURL,
@@ -38,6 +42,8 @@ jest.mock('electron', () => {
       mockQuit,
       mockWhenReady,
       mockAppOn,
+      mockGetPath,
+      mockIpcHandle,
       MockBrowserWindow,
       mockWindow,
     },
@@ -104,9 +110,7 @@ describe('src/main/index.cjs', () => {
     const { mockAppOn, mockQuit } = loadMain();
     await awaitReady();
 
-    const handler = mockAppOn.mock.calls.find(
-      ([event]) => event === 'window-all-closed',
-    )[1];
+    const handler = mockAppOn.mock.calls.find(([event]) => event === 'window-all-closed')[1];
     handler();
     expect(mockQuit).toHaveBeenCalled();
   });
@@ -116,9 +120,7 @@ describe('src/main/index.cjs', () => {
     await awaitReady();
     mockGetAllWindows.mockReturnValue([]);
 
-    const handler = mockAppOn.mock.calls.find(
-      ([event]) => event === 'activate',
-    )[1];
+    const handler = mockAppOn.mock.calls.find(([event]) => event === 'activate')[1];
     handler();
 
     expect(MockBrowserWindow).toHaveBeenCalledTimes(2);
@@ -133,5 +135,22 @@ describe('src/main/index.cjs', () => {
     const { mockWindow } = require('electron').__mocks;
     expect(mockWindow.loadURL).toHaveBeenCalledWith('http://localhost:5173');
     expect(mockWindow.loadFile).not.toHaveBeenCalled();
+  });
+
+  it('注册 lo-core IPC 处理器(基于 userData)', async () => {
+    const mocks = loadMain();
+    await awaitReady();
+    expect(mocks.mockGetPath).toHaveBeenCalledWith('userData');
+    const channels = mocks.mockIpcHandle.mock.calls.map(([ch]) => ch);
+    expect(channels).toEqual(
+      expect.arrayContaining([
+        'lo-core:config',
+        'lo-core:configure',
+        'lo-core:login',
+        'lo-core:status',
+        'lo-core:list-notes',
+        'lo-core:logout',
+      ]),
+    );
   });
 });
