@@ -2,6 +2,7 @@ const path = require('path');
 
 jest.mock('electron', () => {
   const mockLoadFile = jest.fn();
+  const mockLoadURL = jest.fn();
   const mockSetWindowOpenHandler = jest.fn();
   const mockOpenExternal = jest.fn();
   const mockGetAllWindows = jest.fn();
@@ -13,6 +14,7 @@ jest.mock('electron', () => {
 
   const mockWindow = {
     loadFile: mockLoadFile,
+    loadURL: mockLoadURL,
     webContents: { setWindowOpenHandler: mockSetWindowOpenHandler },
   };
   const MockBrowserWindow = jest.fn(() => mockWindow);
@@ -29,6 +31,7 @@ jest.mock('electron', () => {
     shell: { openExternal: mockOpenExternal },
     __mocks: {
       mockLoadFile,
+      mockLoadURL,
       mockSetWindowOpenHandler,
       mockOpenExternal,
       mockGetAllWindows,
@@ -44,6 +47,8 @@ jest.mock('electron', () => {
 describe('src/main/index.cjs', () => {
   beforeEach(() => {
     jest.resetModules();
+    process.env.ELECTRON_RENDERER_URL = '';
+    delete process.env.ELECTRON_RENDERER_URL;
   });
 
   function loadMain() {
@@ -65,7 +70,7 @@ describe('src/main/index.cjs', () => {
     expect(options.width).toBe(1200);
     expect(options.height).toBe(800);
     expect(mockLoadFile).toHaveBeenCalledWith(
-      path.join(__dirname, '..', '..', 'src', 'renderer', 'index.html'),
+      path.join(__dirname, '..', '..', 'dist', 'index.html'),
     );
   });
 
@@ -117,5 +122,16 @@ describe('src/main/index.cjs', () => {
     handler();
 
     expect(MockBrowserWindow).toHaveBeenCalledTimes(2);
+  });
+
+  it('存在 ELECTRON_RENDERER_URL 时加载 dev server', async () => {
+    jest.resetModules();
+    process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
+    require('../../src/main/index.cjs');
+    await awaitReady();
+
+    const { mockWindow } = require('electron').__mocks;
+    expect(mockWindow.loadURL).toHaveBeenCalledWith('http://localhost:5173');
+    expect(mockWindow.loadFile).not.toHaveBeenCalled();
   });
 });

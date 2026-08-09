@@ -43,5 +43,21 @@ module.exports = {
       files: ['**/test/**/*.cjs', '**/*.test.cjs', 'test/**'],
       env: { jest: true },
     },
+    {
+      files: ['**/src/renderer/**/*.jsx', '**/src/renderer/**/*.js'],
+      env: { browser: true, es2022: true },
+      parserOptions: {
+        sourceType: 'module',
+        ecmaFeatures: { jsx: true },
+      },
+      plugins: ['react'],
+      settings: {
+        react: { version: 'detect' },
+      },
+      rules: {
+        'react/jsx-uses-react': 'warn',
+        'react/jsx-uses-vars': 'error',
+      },
+    },
   ],
 };

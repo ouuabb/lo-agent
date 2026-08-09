@@ -9,7 +9,8 @@ lo Agent 是 lo（log）知识库的 Electron 桌面端。它与 `log`（lo Core
 
 ## 技术栈与约定
 
-- **语言/模块**：JavaScript CommonJS（`.cjs`），无 TypeScript、无 ESM。
+- **语言/模块**：JavaScript CommonJS（`.cjs`）主进程/preload，JSX（`.jsx`）渲染进程；无 TypeScript。
+- **渲染框架**：React 19，构建工具 Vite（`vite.config.mjs`），源码位于 `src/renderer`。
 - **Electron**：主进程 `src/main`、preload `src/preload`、渲染进程 `src/renderer`。
 - **安全基线**：`contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`，
   渲染进程不接触 Node API，一律通过 preload 的 `contextBridge` 暴露受控接口。
@@ -18,10 +19,18 @@ lo Agent 是 lo（log）知识库的 Electron 桌面端。它与 `log`（lo Core
 
 ## 常用命令
 
-- `npm start` — 启动 Electron 应用
-- `npm test` — Jest（覆盖率收集默认开启）
-- `npm run lint` — ESLint 检查 `src/**/*.cjs` 与 `test/**/*.cjs`
+- `npm run dev` — 并行启动 Vite dev server（端口 5173）与 Electron（HMR）
+- `npm run build` — Vite 构建渲染进程到 `dist/`
+- `npm start` — 构建后启动 Electron 生产模式
+- `npm test` — 单元测试（Jest，覆盖率默认开启）
+- `npm run lint` — ESLint 检查 `src/**/*.{cjs,jsx}` 与 `test/**/*.cjs`
 - `npm run format` — Prettier 自动格式化
+
+## 开发说明
+
+- 开发模式：主进程通过 `ELECTRON_RENDERER_URL` 加载 Vite dev server；生产模式加载 `dist/index.html`。
+- 新增渲染 UI 放 `src/renderer/src/`，组件使用函数式 + Hooks。
+- 渲染进程访问受控 API：`window.loAgent`（由 preload 暴露）。
 
 ## 测试
 
