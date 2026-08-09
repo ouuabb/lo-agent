@@ -15,6 +15,7 @@ const CHANNEL = {
   GET_NOTE: 'lo-core:get-note',
   UPDATE_NOTE: 'lo-core:update-note',
   LOGOUT: 'lo-core:logout',
+  RELATIONS: 'lo-core:relations',
   OPERATIONS: 'lo-core:operations',
   OPERATION_UNDO: 'lo-core:operation-undo',
   EVENTS_SUBSCRIBE: 'lo-core:events-subscribe',
@@ -38,6 +39,9 @@ contextBridge.exposeInMainWorld('loAgent', {
     getNote: (rid) => ipcRenderer.invoke(CHANNEL.GET_NOTE, rid),
     updateNote: (rid, body) => ipcRenderer.invoke(CHANNEL.UPDATE_NOTE, rid, body),
     logout: () => ipcRenderer.invoke(CHANNEL.LOGOUT),
+    relations: {
+      list: (rid) => ipcRenderer.invoke(CHANNEL.RELATIONS, rid),
+    },
     operations: {
       list: (query) => ipcRenderer.invoke(CHANNEL.OPERATIONS, query),
       undo: (id) => ipcRenderer.invoke(CHANNEL.OPERATION_UNDO, id),

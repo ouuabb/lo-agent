@@ -14,6 +14,7 @@ function makeService() {
     unsubscribeEvents: jest.fn(() => ({ ok: true })),
     listOperations: jest.fn(async (q) => ({ ok: true, data: [] })),
     undoOperation: jest.fn(async (id) => ({ ok: true, data: { operationId: id } })),
+    getRelations: jest.fn(async (rid) => ({ ok: true, data: { outgoing: [], incoming: [] } })),
   };
 }
 
@@ -35,7 +36,8 @@ describe('registerLoCoreIpc', () => {
     expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.EVENTS_UNSUBSCRIBE, expect.any(Function));
     expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.OPERATIONS, expect.any(Function));
     expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.OPERATION_UNDO, expect.any(Function));
-    expect(ipcMain.handle.mock.calls.length).toBe(12);
+    expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.RELATIONS, expect.any(Function));
+    expect(ipcMain.handle.mock.calls.length).toBe(13);
   });
 
   it('handler 委托并传参', async () => {
@@ -90,6 +92,9 @@ describe('registerLoCoreIpc', () => {
 
     await byChannel(CHANNELS.OPERATION_UNDO)({}, 'op_1');
     expect(service.undoOperation).toHaveBeenCalledWith('op_1');
+
+    await byChannel(CHANNELS.RELATIONS)({}, 'res_1');
+    expect(service.getRelations).toHaveBeenCalledWith('res_1');
   });
 
   it('事件订阅通道委托 service 并在事件到达时推送 EVENTS_PUSH', async () => {

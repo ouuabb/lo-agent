@@ -161,6 +161,21 @@ class LoCoreService {
   }
 
   /**
+   * 获取资源关联关系
+   * @param {string} rid
+   * @returns {Promise<{ ok: true, data: { outgoing, incoming } }>}
+   */
+  async getRelations(rid) {
+    try {
+      this._ensureClient();
+      const data = await this.client.relations.list({ rid });
+      return { ok: true, data };
+    } catch (e) {
+      return this._toError(e);
+    }
+  }
+
+  /**
    * 获取操作历史
    * @param {object} [query] — { limit?, type?, status? }
    */

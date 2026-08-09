@@ -33,6 +33,8 @@ describe('src/preload/index.cjs', () => {
     expect(api.loCore.operations).toBeDefined();
     expect(api.loCore.operations.list).toBeDefined();
     expect(api.loCore.operations.undo).toBeDefined();
+    expect(api.loCore.relations).toBeDefined();
+    expect(api.loCore.relations.list).toBeDefined();
     expect(api.loCore.events).toBeDefined();
     expect(api.loCore.events.subscribe).toBeDefined();
     expect(api.loCore.events.unsubscribe).toBeDefined();
@@ -56,8 +58,9 @@ describe('src/preload/index.cjs', () => {
     api.loCore.events.unsubscribe();
     api.loCore.operations.list({ limit: 5 });
     api.loCore.operations.undo('op_1');
+    api.loCore.relations.list('res_1');
 
-    expect(mockInvoke).toHaveBeenCalledTimes(12);
+    expect(mockInvoke).toHaveBeenCalledTimes(13);
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'lo-core:config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'lo-core:configure', { host: 'h' });
     expect(mockInvoke).toHaveBeenNthCalledWith(3, 'lo-core:login', 'x-invalid-arg');
@@ -70,6 +73,7 @@ describe('src/preload/index.cjs', () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(10, 'lo-core:events-unsubscribe');
     expect(mockInvoke).toHaveBeenNthCalledWith(11, 'lo-core:operations', { limit: 5 });
     expect(mockInvoke).toHaveBeenNthCalledWith(12, 'lo-core:operation-undo', 'op_1');
+    expect(mockInvoke).toHaveBeenNthCalledWith(13, 'lo-core:relations', 'res_1');
   });
 
   it('events.onEvent 注册 EVENTS_PUSH 监听并返回退订函数', () => {

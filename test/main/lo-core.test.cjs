@@ -8,6 +8,7 @@ function makeMockClient(overrides = {}) {
     health: { stats: jest.fn() },
     notes: { list: jest.fn(), get: jest.fn(), update: jest.fn() },
     operations: { execute: jest.fn(), list: jest.fn(), undo: jest.fn() },
+    relations: { list: jest.fn() },
     events: { subscribe: jest.fn(), history: jest.fn() },
     ...overrides,
   };
@@ -256,6 +257,40 @@ describe('LoCoreService', () => {
     service.logout();
     expect(saved.fingerprint).toBe('fp');
     expect(saved.host).toBe('h');
+  });
+
+  describe('关联关系', () => {
+    it('getRelations 委托 client.relations.list({rid})', async () => {
+      const client = makeMockClient();
+      client.relations.list.mockResolvedValue({
+        outgoing: [{ id: 1, to_rid: 'res_2', type: 'reference' }],
+        incoming: [],
+      });
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+      const res = await service.getRelations('res_1');
+      expect(res.ok).toBe(true);
+      expect(res.data.outgoing).toHaveLength(1);
+      expect(client.relations.list).toHaveBeenCalledWith({ rid: 'res_1' });
+    });
+
+    it('getRelations 错误映射为 api', async () => {
+      const { LoApiError } = require('@lo/client');
+      const client = makeMockClient();
+      client.relations.list.mockRejectedValue(new LoApiError('bad', { status: 500 }));
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+      const res = await service.getRelations('res_1');
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('api');
+    });
+
+    it('未配置时 getRelations 报错', async () => {
+      const service = new LoCoreService({});
+      const res = await service.getRelations('res_1');
+      expect(res.ok).toBe(false);
+      expect(res.message).toContain('configure');
+    });
   });
 
   describe('操作历史与撤销', () => {

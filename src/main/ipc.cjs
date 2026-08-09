@@ -16,6 +16,7 @@ const CHANNELS = {
   GET_NOTE: 'lo-core:get-note',
   UPDATE_NOTE: 'lo-core:update-note',
   LOGOUT: 'lo-core:logout',
+  RELATIONS: 'lo-core:relations',
   OPERATIONS: 'lo-core:operations',
   OPERATION_UNDO: 'lo-core:operation-undo',
   EVENTS_SUBSCRIBE: 'lo-core:events-subscribe',
@@ -36,6 +37,7 @@ function registerLoCoreIpc(ipcMain, service) {
   ipcMain.handle(CHANNELS.GET_NOTE, (_event, rid) => service.getNote(rid));
   ipcMain.handle(CHANNELS.UPDATE_NOTE, (_event, rid, body) => service.updateNote(rid, body || {}));
   ipcMain.handle(CHANNELS.LOGOUT, () => service.logout());
+  ipcMain.handle(CHANNELS.RELATIONS, (_event, rid) => service.getRelations(rid));
   ipcMain.handle(CHANNELS.OPERATIONS, (_event, query) => service.listOperations(query || {}));
   ipcMain.handle(CHANNELS.OPERATION_UNDO, (_event, id) => service.undoOperation(id));
 

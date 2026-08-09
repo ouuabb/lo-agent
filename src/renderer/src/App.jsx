@@ -532,6 +532,8 @@ useEffect(() => {
               />
             </div>
 
+            <RelationPanel rid={activeTab.rid} notes={notes} />
+
             <div className="editor-statusbar">
               <span className="status-meta">{activeTab.rid}</span>
               <span className="status-meta">类型 {activeTab.meta.type}</span>
@@ -682,6 +684,82 @@ function LoginPanel(props) {
         </button>
       </section>
     </>
+  );
+}
+
+function RelationPanel(props) {
+  const { rid, notes } = props;
+  const [rels, setRels] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const api = window.loAgent?.loCore;
+    if (!api || !api.relations || !rid) return;
+    setBusy(true);
+    const res = await api.relations.list(rid);
+    setBusy(false);
+    if (res.ok) setRels(res.data);
+  }, [rid]);
+
+  useEffect(() => {
+    setRels(null);
+    refresh();
+  }, [rid, refresh]);
+
+  // 从 notes 列表解析对端资源名(名称或标题)
+  const resolveName = (rid2) => {
+    const found = (notes || []).find((n) => n.rid === rid2);
+    if (found) return (found.metadata && found.metadata.title) || found.name || rid2;
+    return rid2;
+  };
+
+  const renderRelation = (rel, dir) => {
+    const otherRid = dir === 'outgoing' ? rel.to_rid : rel.from_rid;
+    return (
+      <div className="rel-item" key={rel.id}>
+        <span className="name-badge">{rel.type || 'reference'}</span>
+        <span className="rel-dir">{dir === 'outgoing' ? '→' : '←'}</span>
+        <span className="rel-target" title={otherRid}>
+          {resolveName(otherRid)}
+        </span>
+      </div>
+    );
+  };
+
+  if (!rid) return null;
+
+  return (
+    <section className="panel-card rel-panel">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>关联关系</h3>
+        <button className="btn ghost" onClick={refresh} disabled={busy}>
+          {busy ? '加载中…' : '刷新'}
+        </button>
+      </div>
+
+      {rels ? (
+        <>
+          <div className="rel-group">
+            <div className="rel-group-title">引用 ({rels.outgoing ? rels.outgoing.length : 0})</div>
+            {rels.outgoing && rels.outgoing.length > 0 ? (
+              rels.outgoing.map((r) => renderRelation(r, 'outgoing'))
+            ) : (
+              <div className="rel-empty">无</div>
+            )}
+          </div>
+          <div className="rel-group">
+            <div className="rel-group-title">被引用 ({rels.incoming ? rels.incoming.length : 0})</div>
+            {rels.incoming && rels.incoming.length > 0 ? (
+              rels.incoming.map((r) => renderRelation(r, 'incoming'))
+            ) : (
+              <div className="rel-empty">无</div>
+            )}
+          </div>
+        </>
+      ) : (
+        <p className="empty">加载中…</p>
+      )}
+    </section>
   );
 }
 
