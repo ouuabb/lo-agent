@@ -17,12 +17,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v5
+        with:
+          path: lo-agent
 
       - name: Checkout dependency lo-client-sdk
         uses: actions/checkout@v5
         with:
           repository: ouuabb/lo-client-sdk
-          path: ../lo-client-sdk
+          path: lo-client-sdk
 
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v5
@@ -31,13 +33,17 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
+        working-directory: lo-agent
         run: npm ci
 
       - name: Run tests
+        working-directory: lo-agent
         run: npm test
 
       - name: Run lint
+        working-directory: lo-agent
         run: npm run lint
 
       - name: Build renderer
+        working-directory: lo-agent
         run: npm run build
