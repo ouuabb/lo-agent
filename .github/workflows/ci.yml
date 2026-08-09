@@ -12,10 +12,7 @@ jobs:
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]
-        node-version: [18, 20, 22]
-        exclude:
-          - os: windows-latest
-            node-version: 22
+        node-version: [20, 22]
 
     steps:
       - name: Checkout code
@@ -35,3 +32,6 @@ jobs:
 
       - name: Run lint
         run: npm run lint
+
+      - name: Build renderer
+        run: npm run build
