@@ -8,6 +8,7 @@ function makeMockClient(overrides = {}) {
     health: { stats: jest.fn() },
     notes: { list: jest.fn(), get: jest.fn(), update: jest.fn() },
     operations: { execute: jest.fn() },
+    events: { subscribe: jest.fn(), history: jest.fn() },
     ...overrides,
   };
   return client;
@@ -255,5 +256,76 @@ describe('LoCoreService', () => {
     service.logout();
     expect(saved.fingerprint).toBe('fp');
     expect(saved.host).toBe('h');
+  });
+
+  describe('事件订阅(SSE)', () => {
+    it('subscribeEvents 委托 client.events.subscribe 并回调', async () => {
+      const client = makeMockClient();
+      const close = jest.fn();
+      client.events.subscribe.mockImplementation((types, handler) => {
+        return { close };
+      });
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+
+      const received = [];
+      const res = service.subscribeEvents(['resource.created'], (ev) => received.push(ev));
+      expect(res.ok).toBe(true);
+      expect(client.events.subscribe).toHaveBeenCalledWith(
+        ['resource.created'],
+        expect.any(Function),
+      );
+      // 触发回调
+      const handler = client.events.subscribe.mock.calls[0][1];
+      handler({ event: 'resource.created', data: { rid: 'r1' } });
+      expect(received).toHaveLength(1);
+      expect(received[0].event).toBe('resource.created');
+    });
+
+    it('重复 subscribeEvents 会关闭旧订阅', () => {
+      const client = makeMockClient();
+      const close1 = jest.fn();
+      const close2 = jest.fn();
+      client.events.subscribe
+        .mockReturnValueOnce({ close: close1 })
+        .mockReturnValueOnce({ close: close2 });
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+
+      service.subscribeEvents(['a'], () => {});
+      service.subscribeEvents(['b'], () => {});
+      expect(close1).toHaveBeenCalled();
+      expect(close2).not.toHaveBeenCalled();
+    });
+
+    it('unsubscribeEvents 关闭订阅', () => {
+      const client = makeMockClient();
+      const close = jest.fn();
+      client.events.subscribe.mockReturnValue({ close });
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+      service.subscribeEvents(['a'], () => {});
+      const res = service.unsubscribeEvents();
+      expect(res.ok).toBe(true);
+      expect(close).toHaveBeenCalled();
+    });
+
+    it('logout 关闭事件订阅', () => {
+      const client = makeMockClient();
+      const close = jest.fn();
+      client.events.subscribe.mockReturnValue({ close });
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+      service.subscribeEvents(['a'], () => {});
+      service.logout();
+      expect(close).toHaveBeenCalled();
+    });
+
+    it('未配置时 subscribeEvents 报错', async () => {
+      const service = new LoCoreService({});
+      const res = service.subscribeEvents(['a'], () => {});
+      expect(res.ok).toBe(false);
+      expect(res.message).toContain('configure');
+    });
   });
 });

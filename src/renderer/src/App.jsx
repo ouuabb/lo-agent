@@ -305,6 +305,39 @@ useEffect(() => {
     return wc.onMaximizeChange(setIsMaximized);
   }, []);
 
+  // 登录后订阅 Core 事件(SSE)，收到资源变化事件刷新列表
+  // 生命周期：登录建立订阅 → 登出/卸载关闭订阅
+  useEffect(() => {
+    if (!api || !authenticated) return undefined;
+    const ev = api.events;
+    if (!ev) return undefined;
+
+    let cancelled = false;
+    let unlisten = null;
+
+    ev.subscribe(['resource.created', 'resource.updated', 'resource.deleted'])
+      .then(() => {
+        if (cancelled) return;
+        unlisten = ev.onEvent((event) => {
+          const type = event && event.event;
+          if (
+            type === 'resource.created' ||
+            type === 'resource.deleted' ||
+            type === 'resource.updated'
+          ) {
+            handleRefresh();
+          }
+        });
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+      if (unlisten) unlisten();
+      ev.unsubscribe().catch(() => {});
+    };
+  }, [authenticated, handleRefresh]);
+
   const winBtn = (action, label, children) => (
     <button
       type="button"

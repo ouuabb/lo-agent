@@ -15,6 +15,9 @@ const CHANNEL = {
   GET_NOTE: 'lo-core:get-note',
   UPDATE_NOTE: 'lo-core:update-note',
   LOGOUT: 'lo-core:logout',
+  EVENTS_SUBSCRIBE: 'lo-core:events-subscribe',
+  EVENTS_UNSUBSCRIBE: 'lo-core:events-unsubscribe',
+  EVENTS_PUSH: 'lo-core:event',
   WIN_MINIMIZE: 'window:minimize',
   WIN_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
   WIN_CLOSE: 'window:close',
@@ -33,6 +36,15 @@ contextBridge.exposeInMainWorld('loAgent', {
     getNote: (rid) => ipcRenderer.invoke(CHANNEL.GET_NOTE, rid),
     updateNote: (rid, body) => ipcRenderer.invoke(CHANNEL.UPDATE_NOTE, rid, body),
     logout: () => ipcRenderer.invoke(CHANNEL.LOGOUT),
+    events: {
+      subscribe: (types) => ipcRenderer.invoke(CHANNEL.EVENTS_SUBSCRIBE, types),
+      unsubscribe: () => ipcRenderer.invoke(CHANNEL.EVENTS_UNSUBSCRIBE),
+      onEvent: (cb) => {
+        const listener = (_e, event) => cb(event);
+        ipcRenderer.on(CHANNEL.EVENTS_PUSH, listener);
+        return () => ipcRenderer.removeListener(CHANNEL.EVENTS_PUSH, listener);
+      },
+    },
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke(CHANNEL.WIN_MINIMIZE),

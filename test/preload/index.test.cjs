@@ -1,10 +1,12 @@
 jest.mock('electron', () => {
   const mockExposeInMainWorld = jest.fn();
   const mockInvoke = jest.fn();
+  const mockOn = jest.fn();
+  const mockRemoveListener = jest.fn();
   return {
     contextBridge: { exposeInMainWorld: mockExposeInMainWorld },
-    ipcRenderer: { invoke: mockInvoke },
-    __mocks: { mockExposeInMainWorld, mockInvoke },
+    ipcRenderer: { invoke: mockInvoke, on: mockOn, removeListener: mockRemoveListener },
+    __mocks: { mockExposeInMainWorld, mockInvoke, mockOn, mockRemoveListener },
   };
 });
 
@@ -28,6 +30,10 @@ describe('src/preload/index.cjs', () => {
     expect(api.loCore.getNote).toBeDefined();
     expect(api.loCore.updateNote).toBeDefined();
     expect(api.loCore.logout).toBeDefined();
+    expect(api.loCore.events).toBeDefined();
+    expect(api.loCore.events.subscribe).toBeDefined();
+    expect(api.loCore.events.unsubscribe).toBeDefined();
+    expect(api.loCore.events.onEvent).toBeDefined();
   });
 
   it('loCore 方法转发到对应 IPC 通道', () => {
@@ -43,8 +49,10 @@ describe('src/preload/index.cjs', () => {
     api.loCore.getNote('res_1');
     api.loCore.updateNote('res_1', { content: 'x' });
     api.loCore.logout();
+    api.loCore.events.subscribe(['resource.created']);
+    api.loCore.events.unsubscribe();
 
-    expect(mockInvoke).toHaveBeenCalledTimes(8);
+    expect(mockInvoke).toHaveBeenCalledTimes(10);
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'lo-core:config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'lo-core:configure', { host: 'h' });
     expect(mockInvoke).toHaveBeenNthCalledWith(3, 'lo-core:login', 'x-invalid-arg');
@@ -53,5 +61,29 @@ describe('src/preload/index.cjs', () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(6, 'lo-core:get-note', 'res_1');
     expect(mockInvoke).toHaveBeenNthCalledWith(7, 'lo-core:update-note', 'res_1', { content: 'x' });
     expect(mockInvoke).toHaveBeenNthCalledWith(8, 'lo-core:logout');
+    expect(mockInvoke).toHaveBeenNthCalledWith(9, 'lo-core:events-subscribe', ['resource.created']);
+    expect(mockInvoke).toHaveBeenNthCalledWith(10, 'lo-core:events-unsubscribe');
+  });
+
+  it('events.onEvent 注册 EVENTS_PUSH 监听并返回退订函数', () => {
+    require('../../src/preload/index.cjs');
+    const { mockExposeInMainWorld, mockOn, mockRemoveListener } = require('electron').__mocks;
+    const api = mockExposeInMainWorld.mock.calls[0][1];
+
+    const cb = jest.fn();
+    const unlisten = api.loCore.events.onEvent(cb);
+
+    // 注册监听
+    expect(mockOn).toHaveBeenCalledWith('lo-core:event', expect.any(Function));
+    const listener = mockOn.mock.calls[0][1];
+
+    // 模拟主进程推送事件
+    const ev = { event: 'resource.updated', data: { rid: 'r1' } };
+    listener({}, ev);
+    expect(cb).toHaveBeenCalledWith(ev);
+
+    // 退订
+    unlisten();
+    expect(mockRemoveListener).toHaveBeenCalledWith('lo-core:event', listener);
   });
 });

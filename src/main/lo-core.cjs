@@ -29,6 +29,8 @@ class LoCoreService {
     this._saveConfig = deps.saveConfig || (() => {});
     this.client = null;
     this.config = {};
+    /** 当前 SSE 事件订阅(单例,登录后激活,登出关闭) */
+    this._eventSub = null;
   }
 
   /** 读取持久化配置并预填当前配置 */
@@ -158,8 +160,41 @@ class LoCoreService {
     }
   }
 
+  /**
+   * 订阅 Core 事件(SSE)
+   *
+   * 复用 @lo/client.events.subscribe；单例订阅，重复调用会先关闭旧订阅。
+   * 事件经回调透传给调用方(主进程 IPC handler 转发到渲染进程)。
+   * @param {string[]} types — 事件类型列表(如 ['resource.created'])
+   * @param {Function} handler — (event) => void
+   * @returns {{ ok: true }}
+   */
+  subscribeEvents(types, handler) {
+    try {
+      this._ensureClient();
+      if (this._eventSub) {
+        this._eventSub.close();
+        this._eventSub = null;
+      }
+      this._eventSub = this.client.events.subscribe(types, (event) => handler(event));
+      return { ok: true };
+    } catch (e) {
+      return this._toError(e);
+    }
+  }
+
+  /** 关闭当前事件订阅 */
+  unsubscribeEvents() {
+    if (this._eventSub) {
+      this._eventSub.close();
+      this._eventSub = null;
+    }
+    return { ok: true };
+  }
+
   /** 登出(清除本地 token,并移除持久化的私钥路径,避免下次自动登录) */
   logout() {
+    this.unsubscribeEvents();
     if (this.client) this.client.logout();
     const next = { ...this._loadConfig(), ...this.config };
     delete next.privateKeyPath;

@@ -16,6 +16,9 @@ const CHANNELS = {
   GET_NOTE: 'lo-core:get-note',
   UPDATE_NOTE: 'lo-core:update-note',
   LOGOUT: 'lo-core:logout',
+  EVENTS_SUBSCRIBE: 'lo-core:events-subscribe',
+  EVENTS_UNSUBSCRIBE: 'lo-core:events-unsubscribe',
+  EVENTS_PUSH: 'lo-core:event',
 };
 
 /**
@@ -31,6 +34,17 @@ function registerLoCoreIpc(ipcMain, service) {
   ipcMain.handle(CHANNELS.GET_NOTE, (_event, rid) => service.getNote(rid));
   ipcMain.handle(CHANNELS.UPDATE_NOTE, (_event, rid, body) => service.updateNote(rid, body || {}));
   ipcMain.handle(CHANNELS.LOGOUT, () => service.logout());
+
+  // 事件订阅(SSE)：主进程持有订阅，事件经 EVENTS_PUSH 推送到发起窗口
+  ipcMain.handle(CHANNELS.EVENTS_SUBSCRIBE, (event, types) => {
+    const sender = event.sender;
+    return service.subscribeEvents(types || [], (ev) => {
+      if (!sender.isDestroyed()) {
+        sender.send(CHANNELS.EVENTS_PUSH, ev);
+      }
+    });
+  });
+  ipcMain.handle(CHANNELS.EVENTS_UNSUBSCRIBE, () => service.unsubscribeEvents());
 }
 
 module.exports = { registerLoCoreIpc, CHANNELS };
