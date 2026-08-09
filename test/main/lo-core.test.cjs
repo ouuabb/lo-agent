@@ -7,7 +7,7 @@ function makeMockClient(overrides = {}) {
     logout: jest.fn(),
     health: { stats: jest.fn() },
     notes: { list: jest.fn(), get: jest.fn(), update: jest.fn() },
-    operations: { execute: jest.fn() },
+    operations: { execute: jest.fn(), list: jest.fn(), undo: jest.fn() },
     events: { subscribe: jest.fn(), history: jest.fn() },
     ...overrides,
   };
@@ -256,6 +256,54 @@ describe('LoCoreService', () => {
     service.logout();
     expect(saved.fingerprint).toBe('fp');
     expect(saved.host).toBe('h');
+  });
+
+  describe('操作历史与撤销', () => {
+    it('listOperations 委托 client.operations.list', async () => {
+      const client = makeMockClient();
+      client.operations.list.mockResolvedValue({
+        total: 2,
+        data: [{ operation_id: 'op_1', type: 'resource.create' }],
+      });
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+      const res = await service.listOperations({ limit: 10 });
+      expect(res.ok).toBe(true);
+      expect(res.total).toBe(2);
+      expect(client.operations.list).toHaveBeenCalledWith({ limit: 10 });
+    });
+
+    it('undoOperation 委托 client.operations.undo', async () => {
+      const client = makeMockClient();
+      client.operations.undo.mockResolvedValue({ undoOperationId: 'op_2' });
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+      const res = await service.undoOperation('op_1');
+      expect(res.ok).toBe(true);
+      expect(res.data.undoOperationId).toBe('op_2');
+      expect(client.operations.undo).toHaveBeenCalledWith('op_1');
+    });
+
+    it('未配置时 listOperations/undoOperation 报错', async () => {
+      const service = new LoCoreService({});
+      const listRes = await service.listOperations();
+      expect(listRes.ok).toBe(false);
+      expect(listRes.message).toContain('configure');
+      const undoRes = await service.undoOperation('op_1');
+      expect(undoRes.ok).toBe(false);
+      expect(undoRes.message).toContain('configure');
+    });
+
+    it('listOperations 错误映射为 api', async () => {
+      const { LoApiError } = require('@lo/client');
+      const client = makeMockClient();
+      client.operations.list.mockRejectedValue(new LoApiError('bad', { status: 500 }));
+      const service = new LoCoreService({ LoClient: class {} });
+      service.client = client;
+      const res = await service.listOperations();
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('api');
+    });
   });
 
   describe('事件订阅(SSE)', () => {

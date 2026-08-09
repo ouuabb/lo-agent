@@ -30,6 +30,9 @@ describe('src/preload/index.cjs', () => {
     expect(api.loCore.getNote).toBeDefined();
     expect(api.loCore.updateNote).toBeDefined();
     expect(api.loCore.logout).toBeDefined();
+    expect(api.loCore.operations).toBeDefined();
+    expect(api.loCore.operations.list).toBeDefined();
+    expect(api.loCore.operations.undo).toBeDefined();
     expect(api.loCore.events).toBeDefined();
     expect(api.loCore.events.subscribe).toBeDefined();
     expect(api.loCore.events.unsubscribe).toBeDefined();
@@ -51,8 +54,10 @@ describe('src/preload/index.cjs', () => {
     api.loCore.logout();
     api.loCore.events.subscribe(['resource.created']);
     api.loCore.events.unsubscribe();
+    api.loCore.operations.list({ limit: 5 });
+    api.loCore.operations.undo('op_1');
 
-    expect(mockInvoke).toHaveBeenCalledTimes(10);
+    expect(mockInvoke).toHaveBeenCalledTimes(12);
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'lo-core:config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'lo-core:configure', { host: 'h' });
     expect(mockInvoke).toHaveBeenNthCalledWith(3, 'lo-core:login', 'x-invalid-arg');
@@ -63,6 +68,8 @@ describe('src/preload/index.cjs', () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(8, 'lo-core:logout');
     expect(mockInvoke).toHaveBeenNthCalledWith(9, 'lo-core:events-subscribe', ['resource.created']);
     expect(mockInvoke).toHaveBeenNthCalledWith(10, 'lo-core:events-unsubscribe');
+    expect(mockInvoke).toHaveBeenNthCalledWith(11, 'lo-core:operations', { limit: 5 });
+    expect(mockInvoke).toHaveBeenNthCalledWith(12, 'lo-core:operation-undo', 'op_1');
   });
 
   it('events.onEvent 注册 EVENTS_PUSH 监听并返回退订函数', () => {

@@ -512,6 +512,34 @@ select {
   color: var(--text);
 }
 
+.op-status {
+  display: inline-block;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+}
+
+.op-status-success {
+  color: #30a46c;
+  border-color: #30a46c;
+}
+
+.op-status-failed {
+  color: #e5484d;
+  border-color: #e5484d;
+}
+
+.op-status-rolled_back {
+  color: #8e8e8e;
+  border-color: #8e8e8e;
+}
+
+.op-status-pending {
+  color: #8e8e8e;
+  border-color: #8e8e8e;
+}
+
 .modal-overlay {
   position: fixed;
   inset: 0;

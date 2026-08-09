@@ -18,6 +18,7 @@ function formatTime(value) {
 const SUB_NAV = [
   { id: 'workspace', label: '工作台' },
   { id: 'docs', label: '文档' },
+  { id: 'history', label: '历史' },
 ];
 
 export default function App() {
@@ -578,6 +579,15 @@ useEffect(() => {
               )}
 
               {view === 'docs' && <DocViewer />}
+
+              {view === 'history' && (
+                <OperationHistory
+                  authenticated={authenticated}
+                  onLogin={openLogin}
+                  onNotify={notify}
+                  onRefresh={handleRefresh}
+                />
+              )}
             </div>
           </div>
           )
@@ -672,6 +682,134 @@ function LoginPanel(props) {
         </button>
       </section>
     </>
+  );
+}
+
+function OperationHistory(props) {
+  const { authenticated, onLogin, onNotify, onRefresh } = props;
+  const [ops, setOps] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [undoing, setUndoing] = useState(null);
+
+  const refresh = useCallback(async () => {
+    const api = window.loAgent?.loCore;
+    if (!api || !api.operations) return;
+    setBusy(true);
+    const res = await api.operations.list({ limit: 100 });
+    setBusy(false);
+    if (res.ok) setOps(res.data || []);
+    else if (onNotify) onNotify(`获取操作历史失败: ${res.message}`);
+  }, [onNotify]);
+
+  useEffect(() => {
+    if (authenticated) refresh();
+  }, [authenticated, refresh]);
+
+  const handleUndo = useCallback(
+    async (op) => {
+      const api = window.loAgent?.loCore;
+      if (!api || !api.operations) return;
+      const opId = op.operation_id || op.operationId;
+      setUndoing(opId);
+      const res = await api.operations.undo(opId);
+      setUndoing(null);
+      if (res.ok) {
+        if (onNotify) onNotify('已撤销操作');
+        refresh();
+        // undo 是独立 Operation，不产生领域事件；手动刷新资源列表
+        if (onRefresh) onRefresh();
+      } else if (onNotify) {
+        onNotify(`撤销失败: ${res.message}`);
+      }
+    },
+    [refresh, onRefresh, onNotify],
+  );
+
+  if (!authenticated) {
+    return (
+      <div className="panel-card">
+        <h2>操作历史</h2>
+        <p className="empty">
+          请先
+          <button className="btn ghost" onClick={onLogin} style={{ marginLeft: 8 }}>
+            登录
+          </button>
+          查看操作历史。
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <section className="panel-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ margin: 0 }}>操作历史</h2>
+        <button className="btn ghost" onClick={refresh} disabled={busy}>
+          {busy ? '加载中…' : '刷新'}
+        </button>
+      </div>
+      {ops.length === 0 ? (
+        <p className="empty">暂无操作记录。</p>
+      ) : (
+        <table className="data-table">
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>类型</th>
+              <th>状态</th>
+              <th>关联资源</th>
+              <th>operationId</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {ops.map((op) => {
+              const after = op.after || {};
+              const before = op.before || {};
+              const rid =
+                after.rid || before.rid || after.resource_rid || after.from_rid || '';
+              const opId = op.operation_id || op.operationId;
+              const statusLabel =
+                op.status === 'success'
+                  ? '成功'
+                  : op.status === 'failed'
+                    ? '失败'
+                    : op.status === 'rolled_back'
+                      ? '已撤销'
+                      : op.status || '';
+              return (
+                <tr key={opId}>
+                  <td>{formatTime(op.created)}</td>
+                  <td>
+                    <span className="name-badge">{op.type}</span>
+                  </td>
+                  <td>
+                    <span className={`op-status op-status-${op.status || 'unknown'}`}>
+                      {statusLabel}
+                    </span>
+                  </td>
+                  <td className="muted">{rid || '—'}</td>
+                  <td className="muted">{opId}</td>
+                  <td>
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      disabled={undoing === opId || op.status !== 'success'}
+                      title={
+                        op.status === 'success' ? '撤销此操作' : '仅成功状态可撤销'
+                      }
+                      onClick={() => handleUndo(op)}
+                    >
+                      {undoing === opId ? '撤销中…' : '撤销'}
+                    </button>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }
 

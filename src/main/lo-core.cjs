@@ -161,6 +161,34 @@ class LoCoreService {
   }
 
   /**
+   * 获取操作历史
+   * @param {object} [query] — { limit?, type?, status? }
+   */
+  async listOperations(query = {}) {
+    try {
+      this._ensureClient();
+      const result = await this.client.operations.list(query);
+      return { ok: true, total: result.total, data: result.data };
+    } catch (e) {
+      return this._toError(e);
+    }
+  }
+
+  /**
+   * 撤销操作
+   * @param {string} operationId
+   */
+  async undoOperation(operationId) {
+    try {
+      this._ensureClient();
+      const result = await this.client.operations.undo(operationId);
+      return { ok: true, data: result };
+    } catch (e) {
+      return this._toError(e);
+    }
+  }
+
+  /**
    * 订阅 Core 事件(SSE)
    *
    * 复用 @lo/client.events.subscribe；单例订阅，重复调用会先关闭旧订阅。
