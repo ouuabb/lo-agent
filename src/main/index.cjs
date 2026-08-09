@@ -9,11 +9,13 @@ const path = require('path');
 const { LoCoreService } = require('./lo-core.cjs');
 const { ConfigStore } = require('./config-store.cjs');
 const { registerLoCoreIpc } = require('./ipc.cjs');
+const { PluginManager } = require('./plugin/plugin-manager.cjs');
 
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
 let loCoreService = null;
 let mainWindow = null;
+let pluginManager = null;
 
 // 移除 Electron 默认应用菜单(File/Edit/View/Window/Help)
 Menu.setApplicationMenu(null);
@@ -25,6 +27,15 @@ function initLoCore() {
     saveConfig: (config) => store.save(config),
   });
   registerLoCoreIpc(ipcMain, loCoreService);
+}
+
+function initPlugins() {
+  pluginManager = new PluginManager({
+    pluginsDir: path.join(app.getPath('userData'), 'plugins'),
+    hostRequireBase: __dirname,
+    loCore: loCoreService,
+    logger: console,
+  });
 }
 
 function registerWindowControls() {
@@ -82,10 +93,19 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initLoCore();
   registerWindowControls();
   createWindow();
+
+  // 初始化插件系统：发现 → 加载 → 激活
+  initPlugins();
+  try {
+    await pluginManager.initialize();
+    await pluginManager.activateAll();
+  } catch (e) {
+    console.error(`[plugin] 插件系统初始化失败: ${e.message}`);
+  }
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();

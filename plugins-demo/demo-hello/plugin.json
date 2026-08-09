@@ -1,0 +1,15 @@
+{
+  "id": "demo-hello",
+  "name": "Demo Hello",
+  "version": "0.1.0",
+  "description": "最小 Demo 插件：加载后调用 Host 能力获取仓库状态",
+  "author": "lo",
+  "main": "index.cjs",
+  "config": {
+    "greeting": {
+      "type": "string",
+      "default": "Hello from demo plugin",
+      "description": "插件问候语"
+    }
+  }
+}

@@ -886,6 +886,9 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
+"@lo/agent-plugins-sdk@file:../lo-agent-plugins-sdk":
+  version "0.1.0"
+
 "@lo/client@file:../lo-client-sdk":
   version "0.1.0"
 

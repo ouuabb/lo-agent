@@ -45,6 +45,7 @@
     "vite": "^6.4.3"
   },
   "dependencies": {
+    "@lo/agent-plugins-sdk": "file:../lo-agent-plugins-sdk",
     "@lo/client": "file:../lo-client-sdk",
     "monaco-editor": "^0.56.0",
     "react": "^19.2.8",
