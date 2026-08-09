@@ -7,7 +7,19 @@ import path from 'node:path';
 export default defineConfig({
   root: path.resolve(__dirname, 'src/renderer'),
   base: './',
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      name: 'dev-csp',
+      apply: 'serve',
+      transformIndexHtml(html) {
+        return html.replace(
+          /<meta[\s\S]*?http-equiv="Content-Security-Policy"[\s\S]*?\/?>/,
+          '<meta http-equiv="Content-Security-Policy" content="default-src \'self\'; script-src \'self\' \'unsafe-inline\'; style-src \'self\' \'unsafe-inline\'; connect-src \'self\' ws: http://localhost:* https://localhost:*" />'
+        );
+      },
+    },
+  ],
   server: {
     port: 5173,
     strictPort: true,

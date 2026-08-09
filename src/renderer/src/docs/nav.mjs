@@ -1,7 +1,7 @@
 /**
- * docs-nav.cjs —— 内置文档的目录/导航纯逻辑（与渲染框架无关）
+ * docs-nav.mjs —— 内置文档的目录/导航纯逻辑（与渲染框架无关）
  *
- * 由 renderer 的 DocViewer 使用，同时可被 Node 测试直接 require：
+ * 由 renderer 的 DocViewer 使用，同时可被 Node 测试直接 import：
  *   - buildNav()          生成侧边栏分组结构
  *   - extractHeadings()   从 Markdown 提取 { level, slug, text } 供页内 TOC
  *   - slugify()           GitHub 风格锚点
@@ -95,4 +95,4 @@ function slugify(text) {
     .replace(/^-+|-+$/g, '');
 }
 
-module.exports = { DOC_GROUPS, buildNav, findDoc, flatIndex, extractHeadings, slugify };
+export { DOC_GROUPS, buildNav, findDoc, flatIndex, extractHeadings, slugify };

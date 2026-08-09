@@ -10,9 +10,9 @@
     "dev:renderer": "vite",
     "dev:electron": "cross-env ELECTRON_RENDERER_URL=http://localhost:5173 electron .",
     "build": "vite build",
-    "test": "jest --passWithNoTests",
-    "lint": "eslint \"src/**/*.{cjs,jsx}\" \"test/**/*.cjs\"",
-    "format": "prettier --write \"src/**/*.{cjs,jsx}\" \"test/**/*.cjs\"",
+    "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests",
+    "lint": "eslint \"src/**/*.{cjs,mjs,jsx}\" \"test/**/*.cjs\"",
+    "format": "prettier --write \"src/**/*.{cjs,mjs,jsx}\" \"test/**/*.cjs\"",
     "prepare": "husky"
   },
   "keywords": [

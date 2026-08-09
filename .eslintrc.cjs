@@ -44,7 +44,7 @@ module.exports = {
       env: { jest: true },
     },
     {
-      files: ['**/src/renderer/**/*.jsx', '**/src/renderer/**/*.js'],
+      files: ['**/src/renderer/**/*.jsx', '**/src/renderer/**/*.js', '**/src/renderer/**/*.mjs'],
       env: { browser: true, es2022: true },
       parserOptions: {
         sourceType: 'module',

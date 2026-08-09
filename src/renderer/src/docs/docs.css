@@ -23,25 +23,29 @@
 }
 
 .app-menu button:hover {
-  background: #f5f5f5;
+  outline: 1px solid #d1d5db;
 }
 
 .app-menu button.active {
-  background: #1967d2;
-  border-color: #1967d2;
-  color: #fff;
+  background: #fff;
+  border-color: #111;
+  color: #111;
 }
 
 .docs-layout {
   display: flex;
   gap: 24px;
-  align-items: flex-start;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
 }
 
 .docs-nav {
   flex: 0 0 220px;
   border-right: 1px solid #e2e2e2;
   padding-right: 16px;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .docs-group {
@@ -72,46 +76,77 @@
 }
 
 .docs-nav a:hover {
-  background: #f0f0f0;
+  outline: 1px solid #d1d5db;
 }
 
 .docs-nav a.active {
-  background: #e8f0fe;
-  color: #1967d2;
-  font-weight: 600;
+  outline: 1px solid #d1d5db;
 }
 
 .docs-content {
   flex: 1;
   min-width: 0;
+  min-height: 0;
   display: flex;
-  gap: 24px;
+  gap: 8px;
 }
 
 .docs-markdown {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  overflow: auto;
   line-height: 1.7;
 }
 
-.docs-markdown pre {
-  background: #f6f8fa;
+.docs-markdown .code-block {
+  position: relative;
+  background: #fff;
   border: 1px solid #e2e2e2;
   border-radius: 8px;
-  padding: 12px;
-  overflow: auto;
+  padding: 34px 12px 12px;
+  margin: 12px 0;
+  overflow: hidden;
 }
 
-.docs-markdown code {
-  background: #f0f0f0;
-  border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 13px;
+.docs-markdown .code-block pre {
+  margin: 0;
+  overflow: auto;
 }
 
 .docs-markdown pre code {
   background: none;
+  border: none;
+  border-radius: 0;
   padding: 0;
+  font-size: 13px;
+}
+
+.docs-markdown .code-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  appearance: none;
+  border: 1px solid #e2e2e2;
+  background: #fff;
+  color: #333;
+  border-radius: 6px;
+  padding: 2px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.6;
+}
+
+.docs-markdown .code-copy:hover {
+  border-color: #d1d5db;
+}
+
+.docs-markdown code {
+  background: #fff;
+  border: 1px solid #e2e2e2;
+  border-radius: 4px;
+  padding: 2px 7px;
+  font-size: 13px;
 }
 
 .docs-markdown table {
@@ -133,12 +168,12 @@
 
 .docs-toc {
   flex: 0 0 200px;
-  position: sticky;
-  top: 16px;
-  align-self: flex-start;
+  align-self: stretch;
   border-left: 1px solid #e2e2e2;
   padding-left: 16px;
   font-size: 13px;
+  overflow: hidden;
+  min-height: 0;
 }
 
 .docs-toc h5 {

@@ -1,13 +1,11 @@
-const {
-  DOC_GROUPS,
-  buildNav,
-  findDoc,
-  flatIndex,
-  extractHeadings,
-  slugify,
-} = require('../../src/renderer/src/docs/nav.cjs');
+let DOC_GROUPS, buildNav, findDoc, flatIndex, extractHeadings, slugify;
 
-describe('docs-nav.cjs', () => {
+beforeAll(async () => {
+  const nav = await import('../../src/renderer/src/docs/nav.mjs');
+  ({ DOC_GROUPS, buildNav, findDoc, flatIndex, extractHeadings, slugify } = nav);
+});
+
+describe('docs-nav.mjs', () => {
   describe('buildNav', () => {
     test('返回分组结构并含标题', () => {
       const nav = buildNav();
