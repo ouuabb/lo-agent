@@ -56,5 +56,5 @@ lo Agent 是 lo（log）知识库的 Electron 桌面端。它与 `log`（lo Core
 ## 注意事项
 
 - 不要修改 `node_modules/`、`dist/`、`out/` 等生成目录。
-- 与 lo Core 交互优先复用 `log`/`lo-sdk` 的既有契约（事件名用点号如 `resource.created`）。
+- 与 lo Core 交互优先复用 `log`/`lo-plugins-sdk` 的既有契约（事件名用点号如 `resource.created`）。
 - 新增主进程文件需遵循 Electron 安全基线，不透传任意 IPC 调用。

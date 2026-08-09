@@ -4,7 +4,7 @@
  * 开发模式（ELECTRON_RENDERER_URL 存在时）加载 Vite dev server；
  * 生产模式加载构建产物 dist/index.html。
  */
-const { app, BrowserWindow, shell, ipcMain } = require('electron');
+const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
 const { LoCoreService } = require('./lo-core.cjs');
 const { ConfigStore } = require('./config-store.cjs');
@@ -13,6 +13,9 @@ const { registerLoCoreIpc } = require('./ipc.cjs');
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
 let loCoreService = null;
+
+// 移除 Electron 默认应用菜单(File/Edit/View/Window/Help)
+Menu.setApplicationMenu(null);
 
 function initLoCore() {
   const store = new ConfigStore(app.getPath('userData'));

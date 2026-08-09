@@ -5,6 +5,7 @@ jest.mock('electron', () => {
   const mockLoadURL = jest.fn();
   const mockSetWindowOpenHandler = jest.fn();
   const mockOpenExternal = jest.fn();
+  const mockSetApplicationMenu = jest.fn();
   const mockGetAllWindows = jest.fn();
   const mockQuit = jest.fn();
   const mockWhenReady = jest.fn();
@@ -32,12 +33,14 @@ jest.mock('electron', () => {
       getAllWindows: mockGetAllWindows,
     }),
     shell: { openExternal: mockOpenExternal },
+    Menu: { setApplicationMenu: mockSetApplicationMenu },
     ipcMain: { handle: mockIpcHandle },
     __mocks: {
       mockLoadFile,
       mockLoadURL,
       mockSetWindowOpenHandler,
       mockOpenExternal,
+      mockSetApplicationMenu,
       mockGetAllWindows,
       mockQuit,
       mockWhenReady,
@@ -67,8 +70,15 @@ describe('src/main/index.cjs', () => {
     return new Promise((resolve) => setImmediate(resolve));
   }
 
+  it('移除 Electron 默认应用菜单', async () => {
+    const { mockSetApplicationMenu } = loadMain();
+    await awaitReady();
+    expect(mockSetApplicationMenu).toHaveBeenCalledWith(null);
+  });
+
   it('whenReady 后创建主窗口并加载渲染进程', async () => {
     const { MockBrowserWindow, mockLoadFile } = loadMain();
+    await awaitReady();
     await awaitReady();
 
     expect(MockBrowserWindow).toHaveBeenCalledTimes(1);
