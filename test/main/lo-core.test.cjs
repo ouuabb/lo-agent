@@ -7,6 +7,7 @@ function makeMockClient(overrides = {}) {
     logout: jest.fn(),
     health: { stats: jest.fn() },
     notes: { list: jest.fn(), get: jest.fn(), update: jest.fn() },
+    operations: { execute: jest.fn() },
     ...overrides,
   };
   return client;
@@ -163,14 +164,22 @@ describe('LoCoreService', () => {
     expect(client.notes.get).toHaveBeenCalledWith('r1');
   });
 
-  it('updateNote 透传 body 并返回更新结果', async () => {
+  it('updateNote 经 Operation 语义执行并返回更新结果', async () => {
     const client = makeMockClient();
-    client.notes.update.mockResolvedValue({ rid: 'r1', content: 'edited' });
+    client.operations.execute.mockResolvedValue({
+      operationId: 'op_1',
+      result: { rid: 'r1', content: 'edited' },
+    });
     const service = new LoCoreService({ LoClient: class {} });
     service.client = client;
     const res = await service.updateNote('r1', { content: 'edited' });
     expect(res.ok).toBe(true);
-    expect(client.notes.update).toHaveBeenCalledWith('r1', { content: 'edited' });
+    expect(res.operationId).toBe('op_1');
+    expect(client.operations.execute).toHaveBeenCalledWith(
+      'resource.update',
+      { rid: 'r1', updates: { content: 'edited' } },
+      {},
+    );
     expect(res.data.content).toBe('edited');
   });
 
@@ -178,7 +187,7 @@ describe('LoCoreService', () => {
     const { LoApiError } = require('@lo/client');
     const client = makeMockClient();
     client.notes.get.mockRejectedValue(new LoApiError('not found', { status: 404 }));
-    client.notes.update.mockRejectedValue(new LoApiError('bad request', { status: 400 }));
+    client.operations.execute.mockRejectedValue(new LoApiError('bad request', { status: 400 }));
     const service = new LoCoreService({ LoClient: class {} });
     service.client = client;
     const getRes = await service.getNote('r1');

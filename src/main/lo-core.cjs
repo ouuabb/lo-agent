@@ -137,14 +137,22 @@ class LoCoreService {
 
   /**
    * 更新资源(content/metadata/title/tags/category)
+   *
+   * 写路径已收敛到 Operation 语义(010 Phase1/Phase2):
+   *   client.operations.execute("resource.update", { rid, updates })
+   * 保持外部调用接口不变: updateNote(rid, body) → { ok, operationId?, data }
    * @param {string} rid
    * @param {object} body
    */
   async updateNote(rid, body) {
     try {
       this._ensureClient();
-      const data = await this.client.notes.update(rid, body || {});
-      return { ok: true, data };
+      const { operationId, result } = await this.client.operations.execute(
+        'resource.update',
+        { rid, updates: body || {} },
+        {},
+      );
+      return { ok: true, operationId, data: result };
     } catch (e) {
       return this._toError(e);
     }
