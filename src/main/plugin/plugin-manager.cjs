@@ -11,8 +11,8 @@
  *   - 插件不能直接访问 lo Core HTTP
  */
 const { PluginLoader } = require('./plugin-loader.cjs');
-const { createPluginHost } = require('./plugin-host.cjs');
-const { fromHost } = require('@lo/agent-plugins-sdk');
+const { createLoImpl } = require('./lo-adapter.cjs');
+const { fromHost, AgentPluginContext } = require('@lo/agent-plugins-sdk');
 
 class PluginManager {
   /**
@@ -135,25 +135,27 @@ class PluginManager {
   }
 
   /**
-   * 构造插件 Context
-   * 注入 host API（Host 门面）——插件经此访问 Core，禁止直连。
-   * config 提供 SDK 语义的方法（key 读取 / 不传返回全部，带默认值合并）。
+   * 构造插件 Context —— 用 SDK AgentPluginContext 实例化
+   *
+   * 注入：
+   *   - loImpl（ctx.lo 实现，Host Adapter）→ LoCoreService → @lo/client
+   *   - configValues（manifest.config 默认值）
+   *   - logger
+   *
+   * SDK 定义契约；Host 提供实现。
    */
   _createContext(entry) {
     const schema = entry.manifest.config || {};
-    const values = {};
+    const configValues = {};
     for (const [k, def] of Object.entries(schema)) {
-      values[k] = def && def.default !== undefined ? def.default : undefined;
+      configValues[k] = def && def.default !== undefined ? def.default : undefined;
     }
-    return {
+    return new AgentPluginContext({
       pluginId: entry.id,
-      host: createPluginHost(this.loCore),
+      loImpl: createLoImpl(this.loCore),
       logger: fromHost(this.logger).child({ plugin: entry.id }),
-      config: (key, defaultValue) => {
-        if (key === undefined) return values;
-        return values[key] !== undefined ? values[key] : defaultValue;
-      },
-    };
+      configValues,
+    });
   }
 }
 

@@ -14,7 +14,15 @@ function makeLoCore() {
     undoOperation: jest.fn(async () => ({ ok: true })),
     subscribeEvents: jest.fn(() => ({ ok: true })),
     unsubscribeEvents: jest.fn(() => ({ ok: true })),
-    client: { auth: { authenticated: true } },
+    client: {
+      auth: { authenticated: true },
+      health: { stats: jest.fn(async () => ({ totalResources: 3, totalRelations: 1 })) },
+      operations: { execute: jest.fn(), list: jest.fn(), get: jest.fn(), undo: jest.fn() },
+      relations: { list: jest.fn(), get: jest.fn(), create: jest.fn(), update: jest.fn(), remove: jest.fn() },
+      events: { subscribe: jest.fn(), history: jest.fn() },
+      notes: { list: jest.fn(), get: jest.fn() },
+      search: { search: jest.fn() },
+    },
   };
 }
 
@@ -60,15 +68,15 @@ describe('PluginManager', () => {
     expect(list[0].state).toBe('loaded');
   });
 
-  it('激活插件并注入 host 能力，插件可调用 Host API', async () => {
+  it('激活插件并注入 ctx.lo 能力，插件可经 Host Adapter 调用 Core', async () => {
     const dir = makePluginsDir();
     writePlugin(dir, 'demo-b', `
       const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
       class P extends AgentPlugin {
         manifest() { return { id: 'demo-b', name: 'Demo B', version: '0.1.0', main: 'index.cjs' }; }
         async activate(ctx) {
-          const res = await ctx.host.getStatus();
-          this._r = { status: res && res.ok ? res.stats : null, pluginId: ctx.pluginId };
+          const stats = await ctx.lo.health.stats();
+          this._r = { status: stats, pluginId: ctx.pluginId };
         }
       }
       module.exports = P;
@@ -82,8 +90,36 @@ describe('PluginManager', () => {
     await pm.initialize();
     await pm.activate('demo-b');
     const plugin = pm.get('demo-b');
-    expect(plugin._r).toEqual({ status: { totalResources: 3 }, pluginId: 'demo-b' });
-    expect(loCore.getStatus).toHaveBeenCalled();
+    expect(plugin._r).toEqual({ status: { totalResources: 3, totalRelations: 1 }, pluginId: 'demo-b' });
+    expect(loCore.client.health.stats).toHaveBeenCalled();
+  });
+
+  it('插件无法访问 LoClient 原始实例', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-c', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-c', name: 'Demo C', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          this._hasClient = !!ctx.client;
+          this._hasLoCore = !!ctx.loCore;
+          this._loKeys = Object.keys(ctx.lo || {});
+        }
+      }
+      module.exports = P;
+    `);
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+    });
+    await pm.initialize();
+    await pm.activate('demo-c');
+    const plugin = pm.get('demo-c');
+    expect(plugin._hasClient).toBe(false);
+    expect(plugin._hasLoCore).toBe(false);
+    // ctx.lo 只暴露契约命名空间
+    expect(plugin._loKeys.sort()).toEqual(['events', 'health', 'operations', 'relations', 'resources']);
   });
 
   it('激活失败不阻塞其他插件', async () => {
