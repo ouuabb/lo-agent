@@ -6,6 +6,8 @@
  *   - login:       SSH 挑战-应答登录(支持私钥路径或手动 nonce/signature)
  *   - getStatus:   获取 repo 状态(stats)
  *   - listNotes:   获取资源列表
+ *   - getNote:     获取单个资源(含 content)
+ *   - updateNote:  更新资源字段
  *
  * 全部方法返回可序列化数据；网络/业务错误统一转成 { error, message } 结构，
  * 避免把 Error 实例直接抛给 IPC。
@@ -24,6 +26,7 @@ class LoCoreService {
   constructor(deps = {}) {
     this._Client = deps.LoClient || LoClient;
     this._loadConfig = deps.loadConfig || (() => ({}));
+    this._saveConfig = deps.saveConfig || (() => {});
     this.client = null;
     this.config = {};
   }
@@ -40,15 +43,30 @@ class LoCoreService {
    * @returns {{ ok: true, config }}
    */
   configure(cfg = {}) {
-    const host = cfg.host || DEFAULT_HOST;
-    const port = cfg.port === undefined ? DEFAULT_PORT : Number(cfg.port);
-    const protocol = cfg.protocol || 'http';
-    const timeout = cfg.timeout === undefined ? 15000 : Number(cfg.timeout);
+    const base = { ...this._loadConfig(), ...this.config };
+    const host = cfg.host || base.host || DEFAULT_HOST;
+    const port = cfg.port === undefined ? base.port ?? DEFAULT_PORT : Number(cfg.port);
+    const protocol = cfg.protocol || base.protocol || 'http';
+    const timeout =
+      cfg.timeout === undefined
+        ? base.timeout === undefined
+          ? 15000
+          : Number(base.timeout)
+        : Number(cfg.timeout);
 
-    const config = { host, port, protocol, timeout };
+    const config = { ...this.config, host, port, protocol, timeout };
     this.config = config;
     this.client = new this._Client(config);
+    this._save(config);
     return { ok: true, config };
+  }
+
+  /** 保存配置(合并 currentConfig 与持久化已有字段) */
+  _save(patch = {}) {
+    const next = { ...this._loadConfig(), ...this.config, ...patch };
+    this.config = next;
+    this._saveConfig(next);
+    return next;
   }
 
   /** 是否已配置 */
@@ -64,7 +82,15 @@ class LoCoreService {
     try {
       this._ensureClient();
       const result = await this.client.login(params);
-      return { ok: true, token: result.token, fingerprint: result.fingerprint || null };
+      const session = {
+        ok: true,
+        token: result.token,
+        fingerprint: result.fingerprint || null,
+      };
+      if (params.privateKeyPath) {
+        this._save({ privateKeyPath: params.privateKeyPath });
+      }
+      return session;
     } catch (e) {
       return this._toError(e);
     }
@@ -95,9 +121,42 @@ class LoCoreService {
     }
   }
 
-  /** 登出(清除本地 token) */
+  /**
+   * 获取单个资源(含 content)
+   * @param {string} rid
+   */
+  async getNote(rid) {
+    try {
+      this._ensureClient();
+      const data = await this.client.notes.get(rid);
+      return { ok: true, data };
+    } catch (e) {
+      return this._toError(e);
+    }
+  }
+
+  /**
+   * 更新资源(content/metadata/title/tags/category)
+   * @param {string} rid
+   * @param {object} body
+   */
+  async updateNote(rid, body) {
+    try {
+      this._ensureClient();
+      const data = await this.client.notes.update(rid, body || {});
+      return { ok: true, data };
+    } catch (e) {
+      return this._toError(e);
+    }
+  }
+
+  /** 登出(清除本地 token,并移除持久化的私钥路径,避免下次自动登录) */
   logout() {
     if (this.client) this.client.logout();
+    const next = { ...this._loadConfig(), ...this.config };
+    delete next.privateKeyPath;
+    this.config = next;
+    this._saveConfig(next);
     return { ok: true };
   }
 

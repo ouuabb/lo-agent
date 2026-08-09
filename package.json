@@ -46,6 +46,7 @@
   },
   "dependencies": {
     "@lo/client": "file:../lo-client-sdk",
+    "monaco-editor": "^0.56.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",

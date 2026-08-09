@@ -12,7 +12,14 @@ const CHANNEL = {
   LOGIN: 'lo-core:login',
   STATUS: 'lo-core:status',
   LIST_NOTES: 'lo-core:list-notes',
+  GET_NOTE: 'lo-core:get-note',
+  UPDATE_NOTE: 'lo-core:update-note',
   LOGOUT: 'lo-core:logout',
+  WIN_MINIMIZE: 'window:minimize',
+  WIN_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
+  WIN_CLOSE: 'window:close',
+  WIN_IS_MAXIMIZED: 'window:is-maximized',
+  WIN_ON_MAXIMIZE_CHANGE: 'window:maximized-change',
 };
 
 contextBridge.exposeInMainWorld('loAgent', {
@@ -23,6 +30,19 @@ contextBridge.exposeInMainWorld('loAgent', {
     login: (params) => ipcRenderer.invoke(CHANNEL.LOGIN, params),
     getStatus: () => ipcRenderer.invoke(CHANNEL.STATUS),
     listNotes: (query) => ipcRenderer.invoke(CHANNEL.LIST_NOTES, query),
+    getNote: (rid) => ipcRenderer.invoke(CHANNEL.GET_NOTE, rid),
+    updateNote: (rid, body) => ipcRenderer.invoke(CHANNEL.UPDATE_NOTE, rid, body),
     logout: () => ipcRenderer.invoke(CHANNEL.LOGOUT),
+  },
+  windowControls: {
+    minimize: () => ipcRenderer.invoke(CHANNEL.WIN_MINIMIZE),
+    toggleMaximize: () => ipcRenderer.invoke(CHANNEL.WIN_TOGGLE_MAXIMIZE),
+    close: () => ipcRenderer.invoke(CHANNEL.WIN_CLOSE),
+    isMaximized: () => ipcRenderer.invoke(CHANNEL.WIN_IS_MAXIMIZED),
+    onMaximizeChange: (cb) => {
+      const listener = (_e, val) => cb(val);
+      ipcRenderer.on(CHANNEL.WIN_ON_MAXIMIZE_CHANGE, listener);
+      return () => ipcRenderer.removeListener(CHANNEL.WIN_ON_MAXIMIZE_CHANGE, listener);
+    },
   },
 });

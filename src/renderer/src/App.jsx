@@ -1,8 +1,19 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DocViewer from './docs/DocViewer.jsx';
+import NoteEditor from './editor/NoteEditor.jsx';
 import './App.css';
 
 const api = window.loAgent && window.loAgent.loCore;
+
+function formatTime(value) {
+  if (!value) return '';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return String(value);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(
+    d.getHours(),
+  )}:${pad(d.getMinutes())}`;
+}
 
 const SUB_NAV = [
   { id: 'workspace', label: '工作台' },
@@ -13,6 +24,8 @@ export default function App() {
   const [view, setView] = useState('workspace');
   const [subOpen, setSubOpen] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [sidebarWidth, setSidebarWidth] = useState(220);
+  const [resizing, setResizing] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [config, setConfig] = useState({ host: '127.0.0.1', port: 8765, protocol: 'http' });
   const [privateKeyPath, setPrivateKeyPath] = useState('');
@@ -21,23 +34,48 @@ export default function App() {
   const [notes, setNotes] = useState([]);
   const [authenticated, setAuthenticated] = useState(false);
   const [message, setMessage] = useState('');
+  const [tabs, setTabs] = useState([]);
+  const [activeKey, setActiveKey] = useState(null);
+  const [savingKey, setSavingKey] = useState(null);
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const discardKeyRef = useRef(null);
 
   const notify = (text) => setMessage(text);
+
+  const activeTab = tabs.find((t) => t.key === activeKey) || null;
+  const isDirty = (tab) => !!tab && (tab.readOnly ? false : tab.text !== tab.savedText);
 
   useEffect(() => {
     if (!api) {
       notify('preload 未就绪，无法连接 lo 核心');
       return;
     }
+    let cancelled = false;
     api
       .getConfig()
-      .then((c) => {
-        if (c && c.host) {
-          setConfig((prev) => ({ ...prev, ...c }));
-          setPrivateKeyPath(c.privateKeyPath || '');
+      .then(async (c) => {
+        if (cancelled) return;
+        if (!c || !c.host) return;
+        setConfig((prev) => ({ ...prev, ...c }));
+        setPrivateKeyPath(c.privateKeyPath || '');
+        if (c.privateKeyPath) {
+          const { host, port, protocol } = c;
+          const cfg = await api.configure({ host, port, protocol });
+          if (cfg.ok) {
+            const res = await api.login({ privateKeyPath: c.privateKeyPath });
+            if (res.ok) {
+              setAuthenticated(true);
+              notify(`已自动登录 fingerprint=${res.fingerprint || '-'}`);
+              handleRefresh();
+            }
+          }
         }
       })
       .catch((e) => notify(`读取配置失败: ${e.message}`));
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const handleConfigure = useCallback(async () => {
@@ -87,15 +125,235 @@ export default function App() {
     setAuthenticated(false);
     setStatus(null);
     setNotes([]);
+    setTabs([]);
+    setActiveKey(null);
     notify('已登出');
+  }, []);
+
+  const openResource = useCallback(
+    async (n) => {
+      if (!api || !n) return;
+      const existing = tabs.find((t) => t.rid === n.rid);
+      if (existing) {
+        setActiveKey(existing.key);
+        return;
+      }
+      setBusy(true);
+      notify('');
+      const res = await api.getNote(n.rid);
+      setBusy(false);
+      if (res.ok && res.data) {
+        const data = res.data;
+        const readOnly = n.type !== 'note';
+        const tab = {
+          key: n.rid,
+          rid: n.rid,
+          type: n.type || data.type || 'resource',
+          title: (data.metadata && data.metadata.title) || n.name || n.rid,
+          text: data.content || '',
+          savedText: data.content || '',
+          readOnly,
+          meta: {
+            rid: n.rid,
+            type: n.type || data.type || 'resource',
+            updatedAt: data.updatedAt || data.lastModified || null,
+            size: data.size != null ? data.size : (data.content || '').length,
+            schema: data.schema || null,
+          },
+        };
+        setTabs((prev) => [...prev, tab]);
+        setActiveKey(tab.key);
+      } else {
+        notify(`打开资源失败: ${res.message}`);
+      }
+    },
+    [api, tabs],
+  );
+
+  const setActiveText = useCallback(
+    (text) => {
+      setTabs((prev) => prev.map((t) => (t.key === activeKey ? { ...t, text } : t)));
+    },
+    [activeKey],
+  );
+
+  const closeTab = useCallback(
+    (key) => {
+      setTabs((prev) => {
+        const idx = prev.findIndex((t) => t.key === key);
+        const next = prev.filter((t) => t.key !== key);
+        if (activeKey === key) {
+          const fallback = next[Math.max(0, idx - 1)];
+          setActiveKey(fallback ? fallback.key : null);
+        }
+        return next;
+      });
+    },
+    [activeKey],
+  );
+
+  const requestCloseTab = useCallback(
+    (key) => {
+      const tab = tabs.find((t) => t.key === key);
+      if (tab && isDirty(tab)) {
+        discardKeyRef.current = key;
+        setConfirmDiscard(true);
+      } else {
+        closeTab(key);
+      }
+    },
+    [tabs, isDirty, closeTab],
+  );
+
+  const saveActiveTab = useCallback(async () => {
+    if (!api || !activeTab || activeTab.readOnly) return;
+    setSavingKey(activeTab.key);
+    notify('');
+    const res = await api.updateNote(activeTab.rid, { content: activeTab.text });
+    setSavingKey(null);
+    if (res.ok) {
+      setTabs((prev) =>
+        prev.map((t) => (t.key === activeTab.key ? { ...t, savedText: t.text } : t)),
+      );
+      notify('已保存');
+      handleRefresh();
+    } else {
+      notify(`保存失败: ${res.message}`);
+    }
+  }, [api, activeTab, handleRefresh]);
+
+  const confirmDiscardAction = useCallback(() => {
+    const key = discardKeyRef.current;
+    discardKeyRef.current = null;
+    setConfirmDiscard(false);
+    if (key) closeTab(key);
+  }, [closeTab]);
+
+  useEffect(() => {
+    const onKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveActiveTab();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [saveActiveTab]);
+
+  useEffect(() => {
+    document.documentElement.style.zoom = String(zoom);
+    return () => {
+      document.documentElement.style.zoom = '';
+    };
+  }, [zoom]);
+
+useEffect(() => {
+    const round1 = (n) => Number(n.toFixed(2));
+    const step = (cur) => Math.min(1.6, Math.max(0.5, round1(cur)));
+    const onKey = (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        setZoom((z) => step(z + 0.1));
+      } else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        setZoom((z) => step(z - 0.1));
+      } else if (e.key === '0') {
+        e.preventDefault();
+        setZoom(1);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
   }, []);
 
   const setField = (field) => (e) => {
     setConfig((prev) => ({ ...prev, [field]: e.target.value }));
   };
 
+  const startResize = useCallback(
+    (e) => {
+      e.preventDefault();
+      setResizing(true);
+      const startX = e.clientX;
+      const startWidth = sidebarWidth;
+      const onMove = (ev) => {
+        const next = Math.min(480, Math.max(140, startWidth + (ev.clientX - startX)));
+        setSidebarWidth(next);
+      };
+      const stop = () => {
+        setResizing(false);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', stop);
+        document.body.classList.remove('no-select');
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', stop);
+      document.body.classList.add('no-select');
+    },
+    [sidebarWidth],
+  );
+
   const openLogin = () => setLoginOpen(true);
   const closeLogin = () => setLoginOpen(false);
+
+  const [isMaximized, setIsMaximized] = useState(false);
+  useEffect(() => {
+    const wc = window.loAgent?.windowControls;
+    if (!wc) return undefined;
+    wc.isMaximized().then(setIsMaximized).catch(() => {});
+    return wc.onMaximizeChange(setIsMaximized);
+  }, []);
+
+  const winBtn = (action, label, children) => (
+    <button
+      type="button"
+      className="win-btn"
+      aria-label={label}
+      title={label}
+      onClick={action}
+    >
+      {children}
+    </button>
+  );
+
+  const renderCtlButtons = () => {
+    const wc = window.loAgent?.windowControls;
+    if (!wc) return null;
+    return (
+      <div className="win-controls">
+        {winBtn(
+          () => wc.minimize(),
+          '最小化',
+          <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
+            <path d="M1 5.5h9" stroke="currentColor" strokeWidth="1.1" />
+          </svg>,
+        )}
+        {winBtn(
+          () => wc.toggleMaximize(),
+          isMaximized ? '向下还原' : '最大化',
+          isMaximized ? (
+            <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.1" />
+              <path d="M3.5 3.5v-2a0 0 0 0 1 0 0v0h0z" fill="none" />
+              <rect x="3.2" y="3.2" width="7" height="7" fill="none" stroke="currentColor" strokeWidth="1.1" />
+            </svg>
+          ) : (
+            <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
+              <rect x="1.5" y="1.5" width="8" height="8" fill="none" stroke="currentColor" strokeWidth="1.1" />
+            </svg>
+          ),
+        )}
+        {winBtn(
+          () => wc.close(),
+          '关闭',
+          <svg width="11" height="11" viewBox="0 0 11 11" aria-hidden="true">
+            <path d="M2 2l7 7M9 2L2 9" stroke="currentColor" strokeWidth="1.1" strokeLinecap="round" />
+          </svg>,
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="app">
@@ -123,8 +381,9 @@ export default function App() {
           aria-label={authenticated ? '已登录' : '未连接'}
           onClick={openLogin}
         />
+        {renderCtlButtons()}
       </header>
-      <div className="app-shell">
+      <div className={`app-shell ${resizing ? 'resizing' : ''}`}>
         <aside className="app-rail">
           <div className="rail-spacer" />
           <button
@@ -146,14 +405,24 @@ export default function App() {
             </svg>
           </button>
         </aside>
-        <aside className={collapsed ? 'app-sidebar collapsed' : 'app-sidebar'}>
+        <aside
+          className={collapsed ? 'app-sidebar collapsed' : 'app-sidebar'}
+          style={{ width: collapsed ? 0 : sidebarWidth }}
+        >
           <ResourceExplorer
             notes={notes}
             busy={busy}
             authenticated={authenticated}
             onRefresh={handleRefresh}
+            onOpen={openResource}
           />
         </aside>
+
+        <div
+          className="app-sidebar-resizer"
+          onPointerDown={startResize}
+          title="拖拽调整侧边栏宽度"
+        />
 
       <main className="app-content">
         {message && (
@@ -162,7 +431,94 @@ export default function App() {
           </div>
         )}
 
-        {subOpen && (
+        {tabs.length > 0 && (
+          <div className="editor-tabs" role="tablist">
+            {tabs.map((t) => (
+              <div
+                key={t.key}
+                role="tab"
+                aria-selected={t.key === activeKey}
+                className={`editor-tab ${t.key === activeKey ? 'active' : ''} ${
+                  isDirty(t) ? 'dirty' : ''
+                }`}
+                onClick={() => setActiveKey(t.key)}
+              >
+                <span className="editor-tab-name">{t.title}</span>
+                {isDirty(t) && <span className="editor-tab-dirty-dot" title="未保存" />}
+                <button
+                  type="button"
+                  className="editor-tab-close"
+                  aria-label={`关闭 ${t.title}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    requestCloseTab(t.key);
+                  }}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {activeTab ? (
+          <div className="editor-panel">
+            <div className="editor-toolbar">
+              <div className="editor-toolbar-title">
+                <span className="editor-doc-rid">{activeTab.rid}</span>
+                <span className="editor-doc-name">{activeTab.title}</span>
+                {isDirty(activeTab) && <span className="chip chip-dirty">未保存</span>}
+                {activeTab.readOnly && <span className="chip">只读</span>}
+              </div>
+              <div className="editor-toolbar-actions">
+                <button
+                  className="btn primary"
+                  type="button"
+                  onClick={saveActiveTab}
+                  disabled={savingKey || activeTab.readOnly}
+                >
+                  {savingKey ? '保存中…' : activeTab.readOnly ? '只读' : '保存'}
+                </button>
+                <button
+                  className="btn ghost"
+                  type="button"
+                  onClick={() => requestCloseTab(activeTab.key)}
+                >
+                  关闭
+                </button>
+              </div>
+            </div>
+
+            <div className="editor-body">
+              <NoteEditor
+                key={activeTab.key}
+                value={activeTab.text}
+                onChange={setActiveText}
+                readOnly={activeTab.readOnly}
+              />
+            </div>
+
+            <div className="editor-statusbar">
+              <span className="status-meta">{activeTab.rid}</span>
+              <span className="status-meta">类型 {activeTab.meta.type}</span>
+              {activeTab.meta.schema && (
+                <span className="status-meta">schema {activeTab.meta.schema}</span>
+              )}
+              {activeTab.meta.updatedAt && (
+                <span className="status-meta">
+                  更新 {formatTime(activeTab.meta.updatedAt)}
+                </span>
+              )}
+              <span className="status-meta">
+                {activeTab.text.length} 字符
+                {activeTab.readOnly ? ' · 只读' : ''}
+              </span>
+              <span className="status-hint">Ctrl/Cmd+S 保存</span>
+            </div>
+          </div>
+        ) : (
+          tabs.length === 0 &&
+          subOpen && (
           <div className="sub-panel">
             <div className="sub-nav" role="tablist">
               {SUB_NAV.map((item) => (
@@ -191,6 +547,7 @@ export default function App() {
               {view === 'docs' && <DocViewer />}
             </div>
           </div>
+          )
         )}
         </main>
 
@@ -206,6 +563,22 @@ export default function App() {
               onLogin={handleLogin}
               onLogout={handleLogout}
             />
+          </Modal>
+        )}
+
+        {confirmDiscard && (
+          <Modal title="放弃未保存的修改" onClose={() => setConfirmDiscard(false)}>
+            <div className="confirm-body">
+              <p>当前编辑内容尚未保存，确定要关闭并放弃这些修改吗？</p>
+              <div className="confirm-actions">
+                <button className="btn primary" type="button" onClick={confirmDiscardAction}>
+                  放弃修改
+                </button>
+                <button className="btn ghost" type="button" onClick={() => setConfirmDiscard(false)}>
+                  继续编辑
+                </button>
+              </div>
+            </div>
           </Modal>
         )}
       </div>
@@ -327,7 +700,7 @@ function WorkspacePanel(props) {
 }
 
 function ResourceExplorer(props) {
-  const { notes, busy, authenticated, onRefresh } = props;
+  const { notes, busy, authenticated, onRefresh, onOpen } = props;
   const [active, setActive] = useState(null);
 
   const groups = useMemo(() => {
@@ -376,7 +749,10 @@ function ResourceExplorer(props) {
                 key={n.rid}
                 type="button"
                 className={`explore-item ${active === n.rid ? 'active' : ''}`}
-                onClick={() => setActive(n.rid)}
+                onClick={() => {
+                  setActive(n.rid);
+                  if (onOpen) onOpen(n);
+                }}
                 title={n.rid}
               >
                 <span className="explore-name">

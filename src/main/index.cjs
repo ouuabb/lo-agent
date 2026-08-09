@@ -13,14 +13,39 @@ const { registerLoCoreIpc } = require('./ipc.cjs');
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
 let loCoreService = null;
+let mainWindow = null;
 
 // 移除 Electron 默认应用菜单(File/Edit/View/Window/Help)
 Menu.setApplicationMenu(null);
 
 function initLoCore() {
   const store = new ConfigStore(app.getPath('userData'));
-  loCoreService = new LoCoreService({ loadConfig: () => store.load() });
+  loCoreService = new LoCoreService({
+    loadConfig: () => store.load(),
+    saveConfig: (config) => store.save(config),
+  });
   registerLoCoreIpc(ipcMain, loCoreService);
+}
+
+function registerWindowControls() {
+  ipcMain.handle('window:minimize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.minimize();
+  });
+  ipcMain.handle('window:toggle-maximize', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win) return;
+    if (win.isMaximized()) win.unmaximize();
+    else win.maximize();
+  });
+  ipcMain.handle('window:close', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (win) win.close();
+  });
+  ipcMain.handle('window:is-maximized', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return win ? win.isMaximized() : false;
+  });
 }
 
 function createWindow() {
@@ -28,11 +53,6 @@ function createWindow() {
     width: 1200,
     height: 800,
     titleBarStyle: 'hidden',
-    titleBarOverlay: {
-      color: '#ffffff',
-      symbolColor: '#1a1a1a',
-      height: 40,
-    },
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'index.cjs'),
       contextIsolation: true,
@@ -40,6 +60,10 @@ function createWindow() {
       sandbox: true,
     },
   });
+  mainWindow = win;
+
+  win.on('maximize', () => mainWindow && mainWindow.webContents.send('window:maximized-change', true));
+  win.on('unmaximize', () => mainWindow?.webContents.send('window:maximized-change', false));
 
   if (RENDERER_URL) {
     win.loadURL(RENDERER_URL);
@@ -52,10 +76,15 @@ function createWindow() {
     shell.openExternal(url);
     return { action: 'deny' };
   });
+
+  win.on('closed', () => {
+    if (mainWindow === win) mainWindow = null;
+  });
 }
 
 app.whenReady().then(() => {
   initLoCore();
+  registerWindowControls();
   createWindow();
 
   app.on('activate', () => {

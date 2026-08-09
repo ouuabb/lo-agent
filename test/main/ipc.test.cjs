@@ -7,6 +7,8 @@ function makeService() {
     login: jest.fn(async (p) => ({ ok: true, token: 't' })),
     getStatus: jest.fn(async () => ({ ok: true, stats: {} })),
     listNotes: jest.fn(async (q) => ({ ok: true, data: [] })),
+    getNote: jest.fn(async (rid) => ({ ok: true, data: { rid } })),
+    updateNote: jest.fn(async (rid, body) => ({ ok: true, data: { rid, updated: body } })),
     logout: jest.fn(() => ({ ok: true })),
   };
 }
@@ -22,8 +24,10 @@ describe('registerLoCoreIpc', () => {
     expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.LOGIN, expect.any(Function));
     expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.STATUS, expect.any(Function));
     expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.LIST_NOTES, expect.any(Function));
+    expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.GET_NOTE, expect.any(Function));
+    expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.UPDATE_NOTE, expect.any(Function));
     expect(ipcMain.handle).toHaveBeenCalledWith(CHANNELS.LOGOUT, expect.any(Function));
-    expect(ipcMain.handle.mock.calls.length).toBe(6);
+    expect(ipcMain.handle.mock.calls.length).toBe(8);
   });
 
   it('handler 委托并传参', async () => {
@@ -57,6 +61,15 @@ describe('registerLoCoreIpc', () => {
 
     await byChannel(CHANNELS.LIST_NOTES)({}, undefined);
     expect(service.listNotes).toHaveBeenCalledWith({});
+
+    await byChannel(CHANNELS.GET_NOTE)({}, 'res_1');
+    expect(service.getNote).toHaveBeenCalledWith('res_1');
+
+    await byChannel(CHANNELS.UPDATE_NOTE)({}, 'res_1', { content: 'x' });
+    expect(service.updateNote).toHaveBeenCalledWith('res_1', { content: 'x' });
+
+    await byChannel(CHANNELS.UPDATE_NOTE)({}, 'res_1', undefined);
+    expect(service.updateNote).toHaveBeenCalledWith('res_1', {});
 
     await byChannel(CHANNELS.LOGOUT)();
     expect(service.logout).toHaveBeenCalled();

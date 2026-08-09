@@ -6,7 +6,7 @@ function makeMockClient(overrides = {}) {
     login: jest.fn(),
     logout: jest.fn(),
     health: { stats: jest.fn() },
-    notes: { list: jest.fn() },
+    notes: { list: jest.fn(), get: jest.fn(), update: jest.fn() },
     ...overrides,
   };
   return client;
@@ -141,5 +141,110 @@ describe('LoCoreService', () => {
     const res = service.logout();
     expect(client.logout).toHaveBeenCalled();
     expect(res.ok).toBe(true);
+  });
+
+  it('未配置时 getNote/updateNote 报错提示先 configure', async () => {
+    const service = new LoCoreService({});
+    const getRes = await service.getNote('r1');
+    expect(getRes.ok).toBe(false);
+    expect(getRes.message).toContain('configure');
+    const updateRes = await service.updateNote('r1');
+    expect(updateRes.ok).toBe(false);
+    expect(updateRes.message).toContain('configure');
+  });
+
+  it('getNote 返回单个资源', async () => {
+    const client = makeMockClient();
+    client.notes.get.mockResolvedValue({ rid: 'r1', content: 'hi' });
+    const service = new LoCoreService({ LoClient: class {} });
+    service.client = client;
+    const res = await service.getNote('r1');
+    expect(res).toEqual({ ok: true, data: { rid: 'r1', content: 'hi' } });
+    expect(client.notes.get).toHaveBeenCalledWith('r1');
+  });
+
+  it('updateNote 透传 body 并返回更新结果', async () => {
+    const client = makeMockClient();
+    client.notes.update.mockResolvedValue({ rid: 'r1', content: 'edited' });
+    const service = new LoCoreService({ LoClient: class {} });
+    service.client = client;
+    const res = await service.updateNote('r1', { content: 'edited' });
+    expect(res.ok).toBe(true);
+    expect(client.notes.update).toHaveBeenCalledWith('r1', { content: 'edited' });
+    expect(res.data.content).toBe('edited');
+  });
+
+  it('getNote/updateNote 业务错误映射为 api', async () => {
+    const { LoApiError } = require('@lo/client');
+    const client = makeMockClient();
+    client.notes.get.mockRejectedValue(new LoApiError('not found', { status: 404 }));
+    client.notes.update.mockRejectedValue(new LoApiError('bad request', { status: 400 }));
+    const service = new LoCoreService({ LoClient: class {} });
+    service.client = client;
+    const getRes = await service.getNote('r1');
+    expect(getRes.ok).toBe(false);
+    expect(getRes.error).toBe('api');
+    expect(getRes.status).toBe(404);
+    const updateRes = await service.updateNote('r1', { content: 'x' });
+    expect(updateRes.ok).toBe(false);
+    expect(updateRes.error).toBe('api');
+    expect(updateRes.status).toBe(400);
+  });
+
+  it('configure 通过 saveConfig 持久化配置', () => {
+    const saved = {};
+    const service = new LoCoreService({
+      loadConfig: () => ({}),
+      saveConfig: (cfg) => Object.assign(saved, cfg),
+    });
+    service.configure({ host: '10.0.0.2', port: 9000, protocol: 'https' });
+    expect(saved).toMatchObject({
+      host: '10.0.0.2',
+      port: 9000,
+      protocol: 'https',
+      timeout: 15000,
+    });
+  });
+
+  it('login 成功后持久化 privateKeyPath', async () => {
+    const saved = {};
+    const client = makeMockClient();
+    client.login.mockResolvedValue({ token: 'tok', fingerprint: 'fp' });
+    const service = new LoCoreService({
+      LoClient: jest.fn(() => client),
+      saveConfig: (cfg) => Object.assign(saved, cfg),
+    });
+    service.configure({ host: 'h' });
+    await service.login({ privateKeyPath: '/k' });
+    expect(saved.privateKeyPath).toBe('/k');
+  });
+
+  it('logout 从持久化配置移除 privateKeyPath', () => {
+    let saved = { host: 'h', port: 1, privateKeyPath: '/k' };
+    const service = new LoCoreService({
+      loadConfig: () => ({ ...saved }),
+      saveConfig: (cfg) => {
+        saved = { ...cfg };
+      },
+    });
+    service.configure({});
+    const res = service.logout();
+    expect(res.ok).toBe(true);
+    expect(saved.privateKeyPath).toBeUndefined();
+    expect(saved.host).toBe('h');
+  });
+
+  it('logout 保留非私钥字段', () => {
+    let saved = { host: 'h', port: 1, privateKeyPath: '/k', fingerprint: 'fp' };
+    const service = new LoCoreService({
+      loadConfig: () => ({ ...saved }),
+      saveConfig: (cfg) => {
+        saved = { ...cfg };
+      },
+    });
+    service.configure({});
+    service.logout();
+    expect(saved.fingerprint).toBe('fp');
+    expect(saved.host).toBe('h');
   });
 });

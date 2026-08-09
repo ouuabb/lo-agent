@@ -25,6 +25,8 @@ describe('src/preload/index.cjs', () => {
     expect(api.loCore.login).toBeDefined();
     expect(api.loCore.getStatus).toBeDefined();
     expect(api.loCore.listNotes).toBeDefined();
+    expect(api.loCore.getNote).toBeDefined();
+    expect(api.loCore.updateNote).toBeDefined();
     expect(api.loCore.logout).toBeDefined();
   });
 
@@ -38,14 +40,18 @@ describe('src/preload/index.cjs', () => {
     api.loCore.login('x-invalid-arg');
     api.loCore.getStatus();
     api.loCore.listNotes({ limit: 5 });
+    api.loCore.getNote('res_1');
+    api.loCore.updateNote('res_1', { content: 'x' });
     api.loCore.logout();
 
-    expect(mockInvoke).toHaveBeenCalledTimes(6);
+    expect(mockInvoke).toHaveBeenCalledTimes(8);
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'lo-core:config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'lo-core:configure', { host: 'h' });
     expect(mockInvoke).toHaveBeenNthCalledWith(3, 'lo-core:login', 'x-invalid-arg');
     expect(mockInvoke).toHaveBeenNthCalledWith(4, 'lo-core:status');
     expect(mockInvoke).toHaveBeenNthCalledWith(5, 'lo-core:list-notes', { limit: 5 });
-    expect(mockInvoke).toHaveBeenNthCalledWith(6, 'lo-core:logout');
+    expect(mockInvoke).toHaveBeenNthCalledWith(6, 'lo-core:get-note', 'res_1');
+    expect(mockInvoke).toHaveBeenNthCalledWith(7, 'lo-core:update-note', 'res_1', { content: 'x' });
+    expect(mockInvoke).toHaveBeenNthCalledWith(8, 'lo-core:logout');
   });
 });
