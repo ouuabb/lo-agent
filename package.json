@@ -1,5 +1,6 @@
 {
   "name": "lo-agent",
+  "packageManager": "yarn@1.22.22",
   "version": "0.1.0",
   "description": "lo Agent 桌面端",
   "main": "src/main/index.cjs",
