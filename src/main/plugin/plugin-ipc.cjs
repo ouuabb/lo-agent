@@ -12,6 +12,8 @@
 const CHANNELS = {
   LIST_COMMANDS: 'agent-plugins:list-commands',
   EXECUTE_COMMAND: 'agent-plugins:execute-command',
+  LIST_VIEWS: 'agent-plugins:list-views',
+  RENDER_VIEW: 'agent-plugins:render-view',
 };
 
 /**
@@ -34,6 +36,26 @@ function registerPluginIpc(ipcMain, pluginManager) {
       if (!pluginManager) throw new Error('插件系统未初始化');
       const result = await pluginManager.executeCommand(commandId, Array.isArray(args) ? args : []);
       return { ok: true, result };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 列出已注册视图（供视图面板：id / title / type / pluginId）
+  ipcMain.handle(CHANNELS.LIST_VIEWS, () => {
+    if (!pluginManager || !pluginManager.extensionRegistry) return { ok: true, views: [] };
+    const views = pluginManager.extensionRegistry
+      .listViews()
+      .map((v) => ({ id: v.id, title: v.title, type: v.type, pluginId: v.pluginId }));
+    return { ok: true, views };
+  });
+
+  // 渲染视图 → HTML（交付渲染进程承载）
+  ipcMain.handle(CHANNELS.RENDER_VIEW, async (_event, viewId, context) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const result = await pluginManager.renderView(viewId, context || {});
+      return { ok: true, view: result };
     } catch (e) {
       return { ok: false, error: e.message };
     }

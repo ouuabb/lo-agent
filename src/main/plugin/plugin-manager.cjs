@@ -180,6 +180,7 @@ class PluginManager {
       loImpl: createLoImpl(this.loCore),
       extensionsImpl: {
         registerCommands: (defs) => this._registerCommands(entry.id, defs),
+        registerView: (defs) => this._registerViews(entry.id, defs),
       },
       permissions: resolvePermissions(entry.manifest.permissions),
       logger: fromHost(this.logger).child({ plugin: entry.id }),
@@ -290,6 +291,43 @@ class PluginManager {
       throw new Error(`[plugin] 命令注册失败：extensionRegistry 未注入 (${pluginId})`);
     }
     return this.extensionRegistry.registerCommands(pluginId, defs);
+  }
+
+  /**
+   * 将插件的视图注册到 ExtensionRegistry
+   * @param {string} pluginId
+   * @param {Array} defs — [{ id, title?, type?, render }]
+   */
+  _registerViews(pluginId, defs) {
+    if (!this.extensionRegistry) {
+      throw new Error(`[plugin] 视图注册失败：extensionRegistry 未注入 (${pluginId})`);
+    }
+    return this.extensionRegistry.registerViews(pluginId, defs);
+  }
+
+  /**
+   * 渲染插件视图（UI 挂载层：render 返回 HTML 字符串，经白名单 IPC 交付渲染进程）
+   * @param {string} viewId — 视图 ID（如 'demo.status'）
+   * @param {object} [context] — 传给 render 的上下文（如 { rid }）
+   * @returns {Promise<{ pluginId, viewId, title, type, html }>}
+   */
+  async renderView(viewId, context = {}) {
+    if (!this.extensionRegistry) {
+      throw new Error('extensionRegistry 未注入，无法渲染视图');
+    }
+    const view = this.extensionRegistry.getView(viewId);
+    if (!view) {
+      throw new Error(`视图不存在: ${viewId}`);
+    }
+    const entry = this._registry.get(view.pluginId);
+    if (!entry) {
+      throw new Error(`插件未加载: ${view.pluginId}`);
+    }
+    if (entry.state !== 'activated') {
+      throw new Error(`插件未激活: ${view.pluginId}`);
+    }
+    const html = await view.render(context || {}, entry.plugin.context);
+    return { pluginId: view.pluginId, viewId, title: view.title, type: view.type, html };
   }
 
   /**

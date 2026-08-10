@@ -68,6 +68,22 @@ class DemoHelloPlugin extends AgentPlugin {
       },
     ]);
 
+    // 注册可渲染视图（UI 挂载层：render 返回 HTML 快照）
+    ctx.extensions.registerView([
+      {
+        id: 'demo-hello.status',
+        title: 'Demo: 状态',
+        type: 'panel',
+        render: async (context, cmdCtx) => {
+          const cfg = cmdCtx.config('greeting', greeting);
+          const statusHtml = status
+            ? `<li>资源: ${status.totalResources} · 关系: ${status.totalRelations}</li>`
+            : '<li>状态不可用</li>';
+          return `<div style="font-size:13px"><p><strong>${cfg}</strong></p><ul>${statusHtml}</ul></div>`;
+        },
+      },
+    ]);
+
     // 记录激活结果到插件上下文（供验证）
     this._activationResult = { greeting, status };
 

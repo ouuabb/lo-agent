@@ -524,4 +524,70 @@ describe('PluginManager', () => {
     expect(pm.getConfig('demo-mgmt')).toEqual({});
     expect(pm.getSettings('demo-mgmt')).toEqual({});
   });
+
+  it('renderView 调用插件视图 render 并返回 HTML', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-view', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-view', name: 'Demo View', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          ctx.extensions.registerView([
+            {
+              id: 'demo-view.status',
+              title: '状态',
+              type: 'panel',
+              render: async (context, cmdCtx) => {
+                return '<div class="plugin-status">' + (context.rid || '') + '</div>';
+              },
+            },
+          ]);
+        }
+      }
+      module.exports = P;
+    `);
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.activate('demo-view');
+
+    const view = reg.getView('demo-view.status');
+    expect(view).toMatchObject({ id: 'demo-view.status', pluginId: 'demo-view', type: 'panel' });
+
+    const res = await pm.renderView('demo-view.status', { rid: 'res_1' });
+    expect(res).toMatchObject({
+      pluginId: 'demo-view',
+      viewId: 'demo-view.status',
+      title: '状态',
+      type: 'panel',
+    });
+    expect(res.html).toContain('res_1');
+  });
+
+  it('renderView 视图不存在 / 插件未激活时报错', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-noview', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-noview', name: 'Demo NoView', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;
+    `);
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+
+    await expect(pm.renderView('nope.missing')).rejects.toThrow(/视图不存在/);
+  });
 });

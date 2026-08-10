@@ -29,6 +29,7 @@ export default function App() {
   const [resizing, setResizing] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
   const [config, setConfig] = useState({ host: '127.0.0.1', port: 8765, protocol: 'http' });
   const [privateKeyPath, setPrivateKeyPath] = useState('');
   const [busy, setBusy] = useState(false);
@@ -421,6 +422,18 @@ useEffect(() => {
           </svg>
         </button>
         <button
+          className="rail-btn"
+          type="button"
+          title="插件视图"
+          aria-label="插件视图"
+          onClick={() => setViewOpen(true)}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <rect x="3" y="3" width="18" height="7" rx="1" />
+            <rect x="3" y="14" width="18" height="7" rx="1" />
+          </svg>
+        </button>
+        <button
           className={`conn-dot ${authenticated ? 'on' : ''}`}
           type="button"
           title={authenticated ? '已登录，点击重新登录/登出' : '未连接，点击登录'}
@@ -644,8 +657,95 @@ useEffect(() => {
             <CommandPanel onNotify={notify} onClose={() => setCommandOpen(false)} />
           </Modal>
         )}
+
+        {viewOpen && (
+          <Modal title="插件视图" onClose={() => setViewOpen(false)}>
+            <ViewPanel onNotify={notify} />
+          </Modal>
+        )}
       </div>
     </div>
+  );
+}
+
+function ViewPanel(props) {
+  const { onNotify } = props;
+  const [views, setViews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState(null);
+  const [html, setHtml] = useState('');
+  const [rendering, setRendering] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const api = window.loAgent && window.loAgent.plugins;
+    if (!api || !api.views) {
+      if (onNotify) onNotify('插件系统未就绪');
+      setLoading(false);
+      return;
+    }
+    const res = await api.views.list();
+    setLoading(false);
+    if (res.ok) setViews(res.views || []);
+    else if (onNotify) onNotify(`获取视图失败: ${res.error}`);
+  }, [onNotify]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const open = useCallback(
+    async (view) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api || !api.views) return;
+      setActive(view.id);
+      setRendering(true);
+      setHtml('');
+      const res = await api.views.render(view.id, {});
+      setRendering(false);
+      if (res.ok) {
+        setHtml(res.view.html || '');
+      } else if (onNotify) {
+        setActive(null);
+        onNotify(`渲染失败: ${res.error}`);
+      }
+    },
+    [onNotify],
+  );
+
+  return (
+    <section className="panel-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>插件视图</h3>
+        <button className="btn ghost" onClick={refresh} disabled={loading}>
+          {loading ? '加载中…' : '刷新'}
+        </button>
+      </div>
+      {views.length === 0 ? (
+        <p className="empty">{loading ? '加载中…' : '暂无插件视图'}</p>
+      ) : (
+        <>
+          <ul className="command-list">
+            {views.map((v) => (
+              <li key={v.id} className="command-item">
+                <div className="command-info">
+                  <span className="command-title">{v.title}</span>
+                  <span className="muted">{v.type} · {v.pluginId}</span>
+                </div>
+                <button className="btn primary" type="button" disabled={rendering} onClick={() => open(v)}>
+                  {rendering && active === v.id ? '渲染中…' : '打开'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {active && (
+            <div className="plugin-view">
+              <div className="plugin-view-title">{views.find((v) => v.id === active)?.title}</div>
+              <div className="plugin-view-body" dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          )}
+        </>
+      )}
+    </section>
   );
 }
 

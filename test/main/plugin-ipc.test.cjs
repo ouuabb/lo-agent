@@ -1,20 +1,29 @@
 const { registerPluginIpc, CHANNELS } = require('../../src/main/plugin/plugin-ipc.cjs');
 
-function makeRegistry(commands) {
+function makeRegistry(commands, views = []) {
   return {
     listCommands: jest.fn(() => commands),
+    listViews: jest.fn(() => views),
   };
 }
 
-function makePluginManager(commands = []) {
+function makePluginManager(commands = [], views = []) {
   const pm = {
-    extensionRegistry: makeRegistry(commands),
+    extensionRegistry: makeRegistry(commands, views),
     executeCommand: jest.fn(),
+    renderView: jest.fn(),
   };
   pm.executeCommand.mockImplementation(async (id, args) => ({
     pluginId: 'demo',
     commandId: id,
     result: { ok: true, args },
+  }));
+  pm.renderView.mockImplementation(async (viewId) => ({
+    pluginId: 'demo',
+    viewId,
+    title: 'View',
+    type: 'panel',
+    html: '<p>hi</p>',
   }));
   return pm;
 }
@@ -96,5 +105,53 @@ describe('registerPluginIpc', () => {
     const res = await handler({}, 'nope', []);
     expect(res.ok).toBe(false);
     expect(res.error).toBe('命令不存在: nope');
+  });
+
+  it('LIST_VIEWS 返回视图清单（id/title/type/pluginId，无 render）', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager([], [
+      { id: 'demo.status', title: '状态', type: 'panel', pluginId: 'demo', render: () => {} },
+    ]);
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_VIEWS)[1];
+
+    const res = await handler();
+    expect(res.ok).toBe(true);
+    expect(res.views).toEqual([
+      { id: 'demo.status', title: '状态', type: 'panel', pluginId: 'demo' },
+    ]);
+    expect(res.views.every((v) => typeof v.render === 'undefined')).toBe(true);
+  });
+
+  it('无插件系统时 LIST_VIEWS 返回空清单', async () => {
+    const ipcMain = { handle: jest.fn() };
+    registerPluginIpc(ipcMain, null);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_VIEWS)[1];
+    const res = await handler();
+    expect(res).toEqual({ ok: true, views: [] });
+  });
+
+  it('RENDER_VIEW 委托 pluginManager.renderView 并返回 HTML', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.RENDER_VIEW)[1];
+
+    const res = await handler({}, 'demo.status', { rid: 'r1' });
+    expect(pm.renderView).toHaveBeenCalledWith('demo.status', { rid: 'r1' });
+    expect(res.ok).toBe(true);
+    expect(res.view).toEqual({ pluginId: 'demo', viewId: 'demo.status', title: 'View', type: 'panel', html: '<p>hi</p>' });
+  });
+
+  it('RENDER_VIEW 视图不存在时返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.renderView.mockRejectedValue(new Error('视图不存在: nope'));
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.RENDER_VIEW)[1];
+
+    const res = await handler({}, 'nope', {});
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('视图不存在: nope');
   });
 });

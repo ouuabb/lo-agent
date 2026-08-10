@@ -101,4 +101,39 @@ describe('ExtensionRegistry', () => {
     expect(reg.getCommand('a.cmd')).toBeNull();
     expect(reg.count()).toBe(0);
   });
+
+  it('registerViews 注册视图（含 render）', () => {
+    const reg = new ExtensionRegistry();
+    const render = jest.fn(() => '<p>hi</p>');
+    const registered = reg.registerViews('demo', [
+      { id: 'demo.status', title: '状态', type: 'panel', render },
+      { id: 'demo.bad', render: 'not-fn' }, // 缺 render → 跳过
+    ]);
+    expect(registered).toHaveLength(1);
+
+    const view = reg.getView('demo.status');
+    expect(view).toMatchObject({ id: 'demo.status', pluginId: 'demo', title: '状态', type: 'panel' });
+    expect(typeof view.render).toBe('function');
+    expect(reg.getView('demo.bad')).toBeNull();
+    expect(reg.listViews()).toHaveLength(1);
+  });
+
+  it('registerViews 重复 ID 跳过', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerViews('a', [{ id: 'dup', render: () => 1 }]);
+    const reg2 = reg.registerViews('b', [{ id: 'dup', render: () => 2 }]);
+    expect(reg2).toHaveLength(0);
+    expect(reg.getView('dup').pluginId).toBe('a');
+  });
+
+  it('unregisterByPlugin 同时清理视图，clear 清空', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerViews('a', [{ id: 'a.view', render: () => 1 }]);
+    reg.registerViews('b', [{ id: 'b.view', render: () => 2 }]);
+    reg.unregisterByPlugin('a');
+    expect(reg.getView('a.view')).toBeNull();
+    expect(reg.getView('b.view')).not.toBeNull();
+    reg.clear();
+    expect(reg.listViews()).toHaveLength(0);
+  });
 });

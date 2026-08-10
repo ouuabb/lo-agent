@@ -536,6 +536,28 @@ select {
   white-space: nowrap;
 }
 
+.plugin-view {
+  margin-top: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.plugin-view-title {
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--bg-secondary, rgba(255, 255, 255, 0.03));
+  border-bottom: 1px solid var(--border);
+}
+
+.plugin-view-body {
+  padding: 12px;
+  font-size: 13px;
+  max-height: 360px;
+  overflow: auto;
+}
+
 .name-badge {
   display: inline-block;
   font-size: 11px;

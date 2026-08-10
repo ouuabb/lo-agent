@@ -23,6 +23,8 @@ const CHANNEL = {
   EVENTS_PUSH: 'lo-core:event',
   PLUGINS_LIST: 'agent-plugins:list-commands',
   PLUGINS_EXECUTE: 'agent-plugins:execute-command',
+  PLUGINS_VIEWS: 'agent-plugins:list-views',
+  PLUGINS_RENDER_VIEW: 'agent-plugins:render-view',
   WIN_MINIMIZE: 'window:minimize',
   WIN_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
   WIN_CLOSE: 'window:close',
@@ -62,6 +64,11 @@ contextBridge.exposeInMainWorld('loAgent', {
     list: () => ipcRenderer.invoke(CHANNEL.PLUGINS_LIST),
     execute: (commandId, args) =>
       ipcRenderer.invoke(CHANNEL.PLUGINS_EXECUTE, commandId, args),
+    views: {
+      list: () => ipcRenderer.invoke(CHANNEL.PLUGINS_VIEWS),
+      render: (viewId, context) =>
+        ipcRenderer.invoke(CHANNEL.PLUGINS_RENDER_VIEW, viewId, context),
+    },
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke(CHANNEL.WIN_MINIMIZE),

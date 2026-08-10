@@ -1,11 +1,13 @@
 /**
  * extension-registry.cjs —— 扩展点注册表（Host 实现）
  *
- * 两套数据：
+ * 三套数据：
  *   1. 扩展点声明（纯数据，无 handler）—— 插件激活时经 contributes 解析注册，
  *      供 UI 层发现/展示（命令菜单、视图清单等）。
  *   2. 命令执行器（含 handler）—— 插件激活时经 ctx.extensions.registerCommands
  *      注册，供宿主 PluginManager.executeCommand 调用（命令执行 Runtime）。
+ *   3. 视图渲染器（含 render）—— 插件激活时经 ctx.extensions.registerView 注册，
+ *      render 返回 HTML 字符串，供宿主经白名单 IPC 交付渲染进程承载。
  *
  * 生命周期：
  *   - 插件激活时注册（contributes 解析 + ctx.extensions 动态注册）
@@ -19,6 +21,8 @@ class ExtensionRegistry {
     this._byKey = new Map();
     /** @type {Map<string, object>} commandId → { id, pluginId, title, handler } */
     this._commands = new Map();
+    /** @type {Map<string, object>} viewId → { id, pluginId, title, type, render } */
+    this._views = new Map();
   }
 
   // ── 扩展点声明（纯数据） ──
@@ -77,6 +81,11 @@ class ExtensionRegistry {
         this._commands.delete(cmdId);
       }
     }
+    for (const [viewId, view] of this._views) {
+      if (view.pluginId === pluginId) {
+        this._views.delete(viewId);
+      }
+    }
   }
 
   // ── 命令执行器（含 handler） ──
@@ -121,9 +130,52 @@ class ExtensionRegistry {
     return Array.from(this._commands.values());
   }
 
+  // ── 视图渲染器（含 render） ──
+
+  /**
+   * 注册可渲染视图（UI 挂载层）
+   * @param {string} pluginId — 来源插件 ID
+   * @param {Array<{ id: string, title?: string, type?: string, render: Function }>} defs
+   * @returns {object[]} 注册成功的视图
+   */
+  registerViews(pluginId, defs = []) {
+    const registered = [];
+    for (const def of defs) {
+      if (!def || typeof def.id !== 'string' || !def.id) continue;
+      if (typeof def.render !== 'function') {
+        console.error(`[extension-registry] 视图缺少 render: ${pluginId}:views:${def.id}`);
+        continue;
+      }
+      if (this._views.has(def.id)) {
+        console.error(`[extension-registry] 视图已存在: ${def.id}`);
+        continue;
+      }
+      const view = {
+        id: def.id,
+        pluginId,
+        title: def.title || def.id,
+        type: def.type || 'panel',
+        render: def.render,
+      };
+      this._views.set(def.id, view);
+      registered.push(view);
+    }
+    return registered;
+  }
+
+  /** 获取视图（含 render） */
+  getView(id) {
+    return this._views.get(id) || null;
+  }
+
+  /** 列出全部视图 */
+  listViews() {
+    return Array.from(this._views.values());
+  }
+
   /** 统计 */
   count() {
-    return this._byKey.size + this._commands.size;
+    return this._byKey.size + this._commands.size + this._views.size;
   }
 
   /** 清空 */
@@ -131,6 +183,7 @@ class ExtensionRegistry {
     this._byType.clear();
     this._byKey.clear();
     this._commands.clear();
+    this._views.clear();
   }
 
   /** 按类型列出扩展点 */
