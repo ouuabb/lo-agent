@@ -11,6 +11,7 @@ const { ConfigStore } = require('./config-store.cjs');
 const { registerLoCoreIpc } = require('./ipc.cjs');
 const { PluginManager } = require('./plugin/plugin-manager.cjs');
 const { ExtensionRegistry } = require('./plugin/extension-registry.cjs');
+const { PluginStore } = require('./plugin/plugin-store.cjs');
 const { registerPluginIpc } = require('./plugin/plugin-ipc.cjs');
 
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
@@ -38,6 +39,7 @@ function initPlugins() {
     hostRequireBase: __dirname,
     loCore: loCoreService,
     extensionRegistry,
+    pluginStore: new PluginStore(app.getPath('userData')),
     logger: console,
   });
   pluginManager.extensionRegistry = extensionRegistry;

@@ -391,4 +391,137 @@ describe('PluginManager', () => {
       { rid: 'r1', updates: { name: 'x' } },
     );
   });
+
+  it('enable/disable 调用 plugin 钩子并维护 enabled 状态', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-life', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-life', name: 'Demo Life', version: '0.1.0', main: 'index.cjs' }; }
+        async activate() { this._activated = true; }
+        async enable() { this._enabledCalled = true; }
+        async disable() { this._disabledCalled = true; }
+      }
+      module.exports = P;
+    `);
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+    });
+    await pm.initialize();
+
+    const afterEnable = await pm.enable('demo-life');
+    const plugin = pm.get('demo-life');
+    expect(plugin._activated).toBe(true); // enable 前自动激活
+    expect(plugin._enabledCalled).toBe(true);
+    expect(afterEnable.enabled).toBe(true);
+
+    const afterDisable = await pm.disable('demo-life');
+    expect(plugin._disabledCalled).toBe(true);
+    expect(afterDisable.enabled).toBe(false);
+  });
+
+  it('ctx.config 合并 manifest 默认值与 plugin-config 用户配置', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-cfg', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-cfg', name: 'Demo Cfg', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) { this._cfg = { all: ctx.config(), a: ctx.config('a'), b: ctx.config('b', 'fallback') }; }
+      }
+      module.exports = P;
+    `);
+    const pluginDir = path.join(dir, 'demo-cfg');
+    fs.writeFileSync(
+      path.join(pluginDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'demo-cfg',
+        name: 'Demo Cfg',
+        version: '0.1.0',
+        main: 'index.cjs',
+        config: { a: { type: 'string', default: 'default-a' } },
+      }),
+    );
+
+    const { PluginStore } = require('../../src/main/plugin/plugin-store.cjs');
+    const store = new PluginStore(path.join(dir, 'userdata'));
+    store.setPluginConfig('demo-cfg', 'a', 'user-a');
+
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      pluginStore: store,
+    });
+    await pm.initialize();
+    await pm.activate('demo-cfg');
+    const plugin = pm.get('demo-cfg');
+    expect(plugin._cfg.all).toEqual({ a: 'user-a' });
+    expect(plugin._cfg.a).toBe('user-a');
+    expect(plugin._cfg.b).toBe('fallback');
+  });
+
+  it('ctx.settings 沙箱读写经 PluginStore 持久化', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-set', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-set', name: 'Demo Set', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          await ctx.settings.set('token', 'abc');
+          this._read = await ctx.settings.get('token');
+          this._missing = await ctx.settings.get('nope', 'def');
+        }
+      }
+      module.exports = P;
+    `);
+    const { PluginStore } = require('../../src/main/plugin/plugin-store.cjs');
+    const store = new PluginStore(path.join(dir, 'userdata'));
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      pluginStore: store,
+    });
+    await pm.initialize();
+    await pm.activate('demo-set');
+    const plugin = pm.get('demo-set');
+    expect(plugin._read).toBe('abc');
+    expect(plugin._missing).toBe('def');
+    // 持久化到插件私有文件
+    expect(store.getPluginSettings('demo-set')).toEqual({ token: 'abc' });
+  });
+
+  it('setConfig/getConfig 与 uninstall 清理', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-mgmt', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-mgmt', name: 'Demo Mgmt', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;
+    `);
+    const { PluginStore } = require('../../src/main/plugin/plugin-store.cjs');
+    const store = new PluginStore(path.join(dir, 'userdata'));
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      pluginStore: store,
+    });
+    await pm.initialize();
+
+    pm.setConfig('demo-mgmt', 'k', 'v');
+    expect(pm.getConfig('demo-mgmt')).toEqual({ k: 'v' });
+
+    pm.setSettings('demo-mgmt', 's', 1);
+    expect(pm.getSettings('demo-mgmt')).toEqual({ s: 1 });
+
+    await pm.uninstall('demo-mgmt');
+    expect(pm.get('demo-mgmt')).toBeNull();
+    expect(pm.getConfig('demo-mgmt')).toEqual({});
+    expect(pm.getSettings('demo-mgmt')).toEqual({});
+  });
 });

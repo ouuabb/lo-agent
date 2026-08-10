@@ -27,6 +27,7 @@ class PluginManager {
    * @param {string} options.hostRequireBase — 解析 SDK 的基准路径
    * @param {import('../lo-core.cjs')} options.loCore — LoCoreService
    * @param {import('./extension-registry.cjs')} [options.extensionRegistry]
+   * @param {import('./plugin-store.cjs')} [options.pluginStore] — 配置/设置持久化
    * @param {object} [options.logger] — 宿主 logger
    */
   constructor(options) {
@@ -36,7 +37,9 @@ class PluginManager {
     this.loader = new PluginLoader(options.pluginsDir, options.hostRequireBase);
     /** @type {import('./extension-registry.cjs')} */
     this.extensionRegistry = options.extensionRegistry || null;
-    /** @type {Map<string, { plugin, manifest, dir, state }>} */
+    /** @type {import('./plugin-store.cjs')} */
+    this.pluginStore = options.pluginStore || null;
+    /** @type {Map<string, { plugin, manifest, dir, state, enabled }>} */
     this._registry = new Map();
   }
 
@@ -142,6 +145,7 @@ class PluginManager {
       name: e.manifest.name || id,
       version: e.manifest.version,
       state: e.state,
+      enabled: !!e.enabled,
       manifest: e.manifest,
     }));
   }
@@ -159,16 +163,17 @@ class PluginManager {
    *   - loImpl（ctx.lo 实现，Host Adapter）→ LoCoreService → @lo/client
    *   - extensionsImpl（ctx.extensions 实现）→ ExtensionRegistry.registerCommands
    *   - permissions（resolvePermissions 输出）→ ctx.lo 白名单过滤（最小权限）
-   *   - configValues（manifest.config 默认值）
+   *   - configValues（manifest.config 默认值 + plugin-config.json 用户配置）
+   *   - settingsImpl（ctx.settings 实现）→ PluginStore 沙箱
    *   - logger
    *
    * SDK 定义契约；Host 提供实现。
    */
   _createContext(entry) {
-    const schema = entry.manifest.config || {};
-    const configValues = {};
-    for (const [k, def] of Object.entries(schema)) {
-      configValues[k] = def && def.default !== undefined ? def.default : undefined;
+    // 合并默认值与用户持久化配置
+    const configValues = { ...this._defaultConfigValues(entry) };
+    if (this.pluginStore) {
+      Object.assign(configValues, this.pluginStore.getPluginConfig(entry.id));
     }
     return new AgentPluginContext({
       pluginId: entry.id,
@@ -179,7 +184,100 @@ class PluginManager {
       permissions: resolvePermissions(entry.manifest.permissions),
       logger: fromHost(this.logger).child({ plugin: entry.id }),
       configValues,
+      settings: this._createSettingsImpl(entry.id),
     });
+  }
+
+  /** 从 manifest.config schema 提取默认值 */
+  _defaultConfigValues(entry) {
+    const schema = entry.manifest.config || {};
+    const values = {};
+    for (const [k, def] of Object.entries(schema)) {
+      values[k] = def && def.default !== undefined ? def.default : undefined;
+    }
+    return values;
+  }
+
+  /** 构造 ctx.settings 沙箱实现（经 PluginStore，仅插件私有文件） */
+  _createSettingsImpl(pluginId) {
+    const store = this.pluginStore;
+    return {
+      async get(key, defaultValue) {
+        if (!store) return defaultValue;
+        const data = store.getPluginSettings(pluginId);
+        return key === undefined ? data : data[key] !== undefined ? data[key] : defaultValue;
+      },
+      async set(key, value) {
+        if (!store) throw new Error(`[plugin] settings 不可用：pluginStore 未注入 (${pluginId})`);
+        store.setPluginSetting(pluginId, key, value);
+        return value;
+      },
+    };
+  }
+
+  // ── 生命周期：enable / disable ──
+
+  /** 启用插件（调用 plugin.enable；若未激活先激活） */
+  async enable(id) {
+    const entry = this._registry.get(id);
+    if (!entry) throw new Error(`插件未加载: ${id}`);
+    if (entry.state !== 'activated') {
+      await this.activate(id);
+    }
+    if (typeof entry.plugin.enable === 'function') {
+      await entry.plugin.enable();
+    }
+    entry.enabled = true;
+    return this.list().find((x) => x.id === id);
+  }
+
+  /** 禁用插件（调用 plugin.disable） */
+  async disable(id) {
+    const entry = this._registry.get(id);
+    if (!entry) return;
+    if (typeof entry.plugin.disable === 'function') {
+      await entry.plugin.disable();
+    }
+    entry.enabled = false;
+    return this.list().find((x) => x.id === id);
+  }
+
+  // ── 配置管理（plugin-config.json） ──
+
+  /** 读取插件配置值对象 */
+  getConfig(id) {
+    if (!this.pluginStore) throw new Error('pluginStore 未注入');
+    return this.pluginStore.getPluginConfig(id);
+  }
+
+  /** 设置插件单条配置并落盘 */
+  setConfig(id, key, value) {
+    if (!this.pluginStore) throw new Error('pluginStore 未注入');
+    return this.pluginStore.setPluginConfig(id, key, value);
+  }
+
+  // ── 设置管理（plugin-settings/<id>.json） ──
+
+  /** 读取插件私有设置 */
+  getSettings(id) {
+    if (!this.pluginStore) throw new Error('pluginStore 未注入');
+    return this.pluginStore.getPluginSettings(id);
+  }
+
+  /** 设置插件私有设置并落盘 */
+  setSettings(id, key, value) {
+    if (!this.pluginStore) throw new Error('pluginStore 未注入');
+    return this.pluginStore.setPluginSetting(id, key, value);
+  }
+
+  // ── 卸载 ──
+
+  /** 卸载插件（deactivate + dispose + 清理配置/设置/扩展点） */
+  async uninstall(id) {
+    await this.deactivate(id);
+    await this.dispose(id);
+    if (this.pluginStore) this.pluginStore.clearPlugin(id);
+    return { ok: true, id };
   }
 
   /**
