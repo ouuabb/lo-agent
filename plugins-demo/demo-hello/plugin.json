@@ -5,6 +5,12 @@
   "description": "最小 Demo 插件：加载后调用 Host 能力获取仓库状态，并声明扩展点",
   "author": "lo",
   "main": "index.cjs",
+  "permissions": {
+    "lo": ["health.read", "operations.write"],
+    "storage": false,
+    "network": false,
+    "shell": false
+  },
   "config": {
     "greeting": {
       "type": "string",

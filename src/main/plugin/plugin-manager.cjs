@@ -13,7 +13,12 @@
  */
 const { PluginLoader } = require('./plugin-loader.cjs');
 const { createLoImpl } = require('./lo-adapter.cjs');
-const { fromHost, AgentPluginContext, parseContributes } = require('@lo/agent-plugins-sdk');
+const {
+  fromHost,
+  AgentPluginContext,
+  parseContributes,
+  resolvePermissions,
+} = require('@lo/agent-plugins-sdk');
 
 class PluginManager {
   /**
@@ -153,6 +158,7 @@ class PluginManager {
    * 注入：
    *   - loImpl（ctx.lo 实现，Host Adapter）→ LoCoreService → @lo/client
    *   - extensionsImpl（ctx.extensions 实现）→ ExtensionRegistry.registerCommands
+   *   - permissions（resolvePermissions 输出）→ ctx.lo 白名单过滤（最小权限）
    *   - configValues（manifest.config 默认值）
    *   - logger
    *
@@ -170,6 +176,7 @@ class PluginManager {
       extensionsImpl: {
         registerCommands: (defs) => this._registerCommands(entry.id, defs),
       },
+      permissions: resolvePermissions(entry.manifest.permissions),
       logger: fromHost(this.logger).child({ plugin: entry.id }),
       configValues,
     });

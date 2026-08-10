@@ -54,6 +54,18 @@ class DemoHelloPlugin extends AgentPlugin {
           return { message: `${cfg}, ${who}!`, status };
         },
       },
+      {
+        // 写操作命令：需要 manifest.permissions.lo 声明 operations.write
+        id: 'demo-hello.touch',
+        title: 'Demo: Touch (write)',
+        handler: async (args, cmdCtx) => {
+          await cmdCtx.lo.operations.execute('resource.update', {
+            rid: args[0],
+            updates: { name: (args[1] || 'touched') + '-' + Date.now() },
+          });
+          return { message: 'touched', rid: args[0] };
+        },
+      },
     ]);
 
     // 记录激活结果到插件上下文（供验证）

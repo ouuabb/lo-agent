@@ -87,6 +87,8 @@ lo-agent 作为插件 Host，加载 `{userData}/plugins/<plugin-id>/` 下的客�
   `ExtensionRegistry` 收集/查询/管理（纯数据）
 - **命令执行 Runtime**：插件激活时经 `ctx.extensions.registerCommands([...])` 注册命令 handler，
   宿主经 `PluginManager.executeCommand(id, args)` 调用（视图渲染等执行能力仍待后续阶段）
+- **权限模型**：`ctx.lo` 按 `manifest.permissions.lo` 白名单过滤，未授权方法抛错；
+  默认只读，写操作需显式声明（`resolvePermissions` 解析，最小权限）
 - 依赖方向：`Plugin → ctx.lo → lo-adapter → LoCoreService → @lo/client → lo Core`
 
 ## 安全基线

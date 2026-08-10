@@ -312,4 +312,83 @@ describe('PluginManager', () => {
     await pm.activate('demo-noop');
     await expect(pm.executeCommand('nope.missing')).rejects.toThrow(/命令不存在/);
   });
+
+  it('权限模型：未声明写权限的插件调用 ctx.lo 写操作被拒', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-readonly', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-readonly', name: 'Demo ReadOnly', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          // 读操作默认放行
+          const stats = await ctx.lo.health.stats();
+          // 写操作未声明 → 应抛权限拒绝
+          try {
+            await ctx.lo.operations.execute('resource.update', { rid: 'r1', updates: {} });
+            this._writeDenied = false;
+          } catch (e) {
+            this._writeDenied = /被拒绝/.test(e.message) || e.message.includes('permissions.lo');
+          }
+          this._r = { stats };
+        }
+      }
+      module.exports = P;
+    `);
+    const loCore = makeLoCore();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore,
+    });
+    await pm.initialize();
+    await pm.activate('demo-readonly');
+    const plugin = pm.get('demo-readonly');
+    expect(plugin._writeDenied).toBe(true);
+    // 读操作确实调用到了 client
+    expect(loCore.client.health.stats).toHaveBeenCalled();
+    // 写操作未透传到 client
+    expect(loCore.client.operations.execute).not.toHaveBeenCalled();
+  });
+
+  it('权限模型：声明写权限后 ctx.lo 写操作放行', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-write', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-write', name: 'Demo Write', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          const res = await ctx.lo.operations.execute('resource.update', { rid: 'r1', updates: { name: 'x' } });
+          this._r = res;
+        }
+      }
+      module.exports = P;
+    `);
+    // 覆写 plugin.json 加 permissions
+    const pluginDir = path.join(dir, 'demo-write');
+    fs.writeFileSync(
+      path.join(pluginDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'demo-write',
+        name: 'Demo Write',
+        version: '0.1.0',
+        main: 'index.cjs',
+        permissions: { lo: ['operations.write'] },
+      }),
+    );
+    const loCore = makeLoCore();
+    loCore.client.operations.execute.mockResolvedValue({ operationId: 'op-1', result: { ok: true } });
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore,
+    });
+    await pm.initialize();
+    await pm.activate('demo-write');
+    const plugin = pm.get('demo-write');
+    expect(plugin._r).toEqual({ operationId: 'op-1', result: { ok: true } });
+    expect(loCore.client.operations.execute).toHaveBeenCalledWith(
+      'resource.update',
+      { rid: 'r1', updates: { name: 'x' } },
+    );
+  });
 });
