@@ -14,6 +14,7 @@ const CHANNELS = {
   EXECUTE_COMMAND: 'agent-plugins:execute-command',
   LIST_VIEWS: 'agent-plugins:list-views',
   RENDER_VIEW: 'agent-plugins:render-view',
+  INSTALL: 'agent-plugins:install',
 };
 
 /**
@@ -56,6 +57,17 @@ function registerPluginIpc(ipcMain, pluginManager) {
       if (!pluginManager) throw new Error('插件系统未初始化');
       const result = await pluginManager.renderView(viewId, context || {});
       return { ok: true, view: result };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 安装插件（registryUrl + 可选 force）
+  ipcMain.handle(CHANNELS.INSTALL, async (_event, id, registryUrl, options) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const result = await pluginManager.install(id, registryUrl, options || {});
+      return { ok: true, result };
     } catch (e) {
       return { ok: false, error: e.message };
     }

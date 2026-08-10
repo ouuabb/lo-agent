@@ -45,6 +45,7 @@ describe('src/preload/index.cjs', () => {
     expect(api.plugins.views).toBeDefined();
     expect(api.plugins.views.list).toBeDefined();
     expect(api.plugins.views.render).toBeDefined();
+    expect(api.plugins.install).toBeDefined();
   });
 
   it('loCore 方法转发到对应 IPC 通道', () => {
@@ -69,8 +70,9 @@ describe('src/preload/index.cjs', () => {
     api.plugins.execute('demo.hello', ['world']);
     api.plugins.views.list();
     api.plugins.views.render('demo.status', { rid: 'r1' });
+    api.plugins.install('demo', 'https://example.com', { force: true });
 
-    expect(mockInvoke).toHaveBeenCalledTimes(17);
+    expect(mockInvoke).toHaveBeenCalledTimes(18);
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'lo-core:config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'lo-core:configure', { host: 'h' });
     expect(mockInvoke).toHaveBeenNthCalledWith(3, 'lo-core:login', 'x-invalid-arg');
@@ -88,6 +90,7 @@ describe('src/preload/index.cjs', () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(15, 'agent-plugins:execute-command', 'demo.hello', ['world']);
     expect(mockInvoke).toHaveBeenNthCalledWith(16, 'agent-plugins:list-views');
     expect(mockInvoke).toHaveBeenNthCalledWith(17, 'agent-plugins:render-view', 'demo.status', { rid: 'r1' });
+    expect(mockInvoke).toHaveBeenNthCalledWith(18, 'agent-plugins:install', 'demo', 'https://example.com', { force: true });
   });
 
   it('events.onEvent 注册 EVENTS_PUSH 监听并返回退订函数', () => {

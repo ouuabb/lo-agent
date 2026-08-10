@@ -154,4 +154,29 @@ describe('registerPluginIpc', () => {
     expect(res.ok).toBe(false);
     expect(res.error).toBe('视图不存在: nope');
   });
+
+  it('INSTALL 委托 pluginManager.install', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.install = jest.fn(async (id, url, opts) => ({ id, version: '0.1.0', dir: '/d', state: 'loaded' }));
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.INSTALL)[1];
+
+    const res = await handler({}, 'demo', 'https://example.com', { force: true });
+    expect(pm.install).toHaveBeenCalledWith('demo', 'https://example.com', { force: true });
+    expect(res.ok).toBe(true);
+    expect(res.result.id).toBe('demo');
+  });
+
+  it('INSTALL 失败时返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.install = jest.fn(async () => { throw new Error('checksum 校验失败'); });
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.INSTALL)[1];
+
+    const res = await handler({}, 'demo', 'https://example.com', {});
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('checksum 校验失败');
+  });
 });

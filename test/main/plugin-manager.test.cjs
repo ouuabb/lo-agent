@@ -590,4 +590,56 @@ describe('PluginManager', () => {
 
     await expect(pm.renderView('nope.missing')).rejects.toThrow(/视图不存在/);
   });
+
+  it('install 从本地 registry 安装并加载插件', async () => {
+    const fs = require('fs');
+    const crypto = require('crypto');
+    const tar = require('tar');
+    const dir = makePluginsDir();
+    const registryDir = path.join(dir, 'registry');
+    const distDir = path.join(registryDir, 'dist');
+    const srcDir = path.join(registryDir, 'packages', 'demo-from-reg');
+    fs.mkdirSync(srcDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(srcDir, 'index.cjs'),
+      `const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-from-reg', name: 'Demo From Reg', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;`,
+    );
+    fs.writeFileSync(
+      path.join(srcDir, 'plugin.json'),
+      JSON.stringify({ id: 'demo-from-reg', name: 'Demo From Reg', version: '0.1.0', main: 'index.cjs' }),
+    );
+    fs.mkdirSync(distDir, { recursive: true });
+    const tarball = path.join(distDir, 'demo-from-reg-0.1.0.tar.gz');
+    await tar.create(
+      { gzip: true, file: tarball, cwd: srcDir, portable: true },
+      fs.readdirSync(srcDir),
+    );
+    const checksum = crypto.createHash('sha256').update(fs.readFileSync(tarball)).digest('hex');
+    fs.writeFileSync(
+      path.join(registryDir, 'index.json'),
+      JSON.stringify([
+        { id: 'demo-from-reg', name: 'Demo From Reg', version: '0.1.0', main: 'index.cjs', downloadUrl: 'dist/demo-from-reg-0.1.0.tar.gz', checksum },
+      ]),
+    );
+
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+    });
+    await pm.initialize();
+
+    const res = await pm.install('demo-from-reg', registryDir);
+    expect(res.id).toBe('demo-from-reg');
+    expect(res.state).toBe('loaded');
+
+    await pm.activate('demo-from-reg');
+    const plugin = pm.get('demo-from-reg');
+    expect(plugin).toBeTruthy();
+  });
 });

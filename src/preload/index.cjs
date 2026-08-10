@@ -25,6 +25,7 @@ const CHANNEL = {
   PLUGINS_EXECUTE: 'agent-plugins:execute-command',
   PLUGINS_VIEWS: 'agent-plugins:list-views',
   PLUGINS_RENDER_VIEW: 'agent-plugins:render-view',
+  PLUGINS_INSTALL: 'agent-plugins:install',
   WIN_MINIMIZE: 'window:minimize',
   WIN_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
   WIN_CLOSE: 'window:close',
@@ -69,6 +70,8 @@ contextBridge.exposeInMainWorld('loAgent', {
       render: (viewId, context) =>
         ipcRenderer.invoke(CHANNEL.PLUGINS_RENDER_VIEW, viewId, context),
     },
+    install: (id, registryUrl, options) =>
+      ipcRenderer.invoke(CHANNEL.PLUGINS_INSTALL, id, registryUrl, options),
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke(CHANNEL.WIN_MINIMIZE),

@@ -13,6 +13,7 @@
  */
 const { PluginLoader } = require('./plugin-loader.cjs');
 const { createLoImpl } = require('./lo-adapter.cjs');
+const { PluginInstaller } = require('./plugin-installer.cjs');
 const {
   fromHost,
   AgentPluginContext,
@@ -39,6 +40,8 @@ class PluginManager {
     this.extensionRegistry = options.extensionRegistry || null;
     /** @type {import('./plugin-store.cjs')} */
     this.pluginStore = options.pluginStore || null;
+    /** @type {import('./plugin-installer.cjs')} */
+    this.installer = new PluginInstaller(options.pluginsDir);
     /** @type {Map<string, { plugin, manifest, dir, state, enabled }>} */
     this._registry = new Map();
   }
@@ -269,6 +272,20 @@ class PluginManager {
   setSettings(id, key, value) {
     if (!this.pluginStore) throw new Error('pluginStore 未注入');
     return this.pluginStore.setPluginSetting(id, key, value);
+  }
+
+  // ── 安装 ──
+
+  /** 从分发仓库安装插件（下载 → 校验 → 解压 → 加载） */
+  async install(id, registryUrl, options = {}) {
+    const result = await this.installer.install(id, registryUrl, options);
+    // 加载已安装插件并注册
+    const loaded = this.loader.load(result.dir);
+    if (loaded.id !== id) {
+      throw new Error(`插件包 id 不匹配: 期望 ${id}，实际 ${loaded.id}`);
+    }
+    this._registry.set(id, { id, plugin: loaded.plugin, manifest: loaded.manifest, dir: result.dir, state: 'loaded' });
+    return { id, version: result.version, dir: result.dir, state: 'loaded' };
   }
 
   // ── 卸载 ──
