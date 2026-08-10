@@ -1,11 +1,14 @@
 /**
  * extension-registry.cjs —— 扩展点注册表（Host 实现）
  *
- * 收集/管理插件声明的扩展点（纯数据，无 handler）。
- * 执行能力（命令执行、视图渲染）由后续 Runtime 阶段管理，本阶段只做注册与查询。
+ * 两套数据：
+ *   1. 扩展点声明（纯数据，无 handler）—— 插件激活时经 contributes 解析注册，
+ *      供 UI 层发现/展示（命令菜单、视图清单等）。
+ *   2. 命令执行器（含 handler）—— 插件激活时经 ctx.extensions.registerCommands
+ *      注册，供宿主 PluginManager.executeCommand 调用（命令执行 Runtime）。
  *
  * 生命周期：
- *   - 插件激活时注册（manifest.contributes 解析）
+ *   - 插件激活时注册（contributes 解析 + ctx.extensions 动态注册）
  *   - 插件停用/卸载时按 pluginId 清理
  */
 class ExtensionRegistry {
@@ -14,7 +17,11 @@ class ExtensionRegistry {
     this._byType = new Map();
     /** @type {Map<string, object>} `${pluginId}:${type}:${id}` → ExtensionPoint */
     this._byKey = new Map();
+    /** @type {Map<string, object>} commandId → { id, pluginId, title, handler } */
+    this._commands = new Map();
   }
+
+  // ── 扩展点声明（纯数据） ──
 
   /**
    * 注册扩展点
@@ -65,6 +72,65 @@ class ExtensionRegistry {
         this._byKey.delete(key);
       }
     }
+    for (const [cmdId, cmd] of this._commands) {
+      if (cmd.pluginId === pluginId) {
+        this._commands.delete(cmdId);
+      }
+    }
+  }
+
+  // ── 命令执行器（含 handler） ──
+
+  /**
+   * 注册可执行命令（命令执行 Runtime）
+   * @param {string} pluginId — 来源插件 ID
+   * @param {Array<{ id: string, title?: string, handler: Function }>} defs — 命令定义
+   * @returns {object[]} 注册成功的命令
+   */
+  registerCommands(pluginId, defs = []) {
+    const registered = [];
+    for (const def of defs) {
+      if (!def || typeof def.id !== 'string' || !def.id) continue;
+      if (typeof def.handler !== 'function') {
+        console.error(`[extension-registry] 命令缺少 handler: ${pluginId}:commands:${def.id}`);
+        continue;
+      }
+      if (this._commands.has(def.id)) {
+        console.error(`[extension-registry] 命令已存在: ${def.id}`);
+        continue;
+      }
+      const cmd = {
+        id: def.id,
+        pluginId,
+        title: def.title || def.id,
+        handler: def.handler,
+      };
+      this._commands.set(def.id, cmd);
+      registered.push(cmd);
+    }
+    return registered;
+  }
+
+  /** 获取命令（含 handler） */
+  getCommand(id) {
+    return this._commands.get(id) || null;
+  }
+
+  /** 列出全部命令 */
+  listCommands() {
+    return Array.from(this._commands.values());
+  }
+
+  /** 统计 */
+  count() {
+    return this._byKey.size + this._commands.size;
+  }
+
+  /** 清空 */
+  clear() {
+    this._byType.clear();
+    this._byKey.clear();
+    this._commands.clear();
   }
 
   /** 按类型列出扩展点 */
@@ -84,17 +150,6 @@ class ExtensionRegistry {
   /** 某插件贡献的扩展点 */
   listByPlugin(pluginId) {
     return Array.from(this._byKey.values()).filter((p) => p.pluginId === pluginId);
-  }
-
-  /** 统计 */
-  count() {
-    return this._byKey.size;
-  }
-
-  /** 清空 */
-  clear() {
-    this._byType.clear();
-    this._byKey.clear();
   }
 
   _key(point) {

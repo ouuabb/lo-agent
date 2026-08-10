@@ -84,7 +84,9 @@ lo-agent 作为插件 Host，加载 `{userData}/plugins/<plugin-id>/` 下的客�
 - **边界**：插件只能经 `ctx.lo`（Host Adapter）调用 Core，不能直接访问 `@lo/client` / HTTP
 - **生命周期**：`installed → loaded → activated → enabled → disabled → deactivated → disposed`
 - **扩展点**：插件 `manifest.contributes`（commands/views/panels/editors/services）→
-  `ExtensionRegistry` 收集/查询/管理（纯数据，执行由后续 Runtime 阶段管理）
+  `ExtensionRegistry` 收集/查询/管理（纯数据）
+- **命令执行 Runtime**：插件激活时经 `ctx.extensions.registerCommands([...])` 注册命令 handler，
+  宿主经 `PluginManager.executeCommand(id, args)` 调用（视图渲染等执行能力仍待后续阶段）
 - 依赖方向：`Plugin → ctx.lo → lo-adapter → LoCoreService → @lo/client → lo Core`
 
 ## 安全基线

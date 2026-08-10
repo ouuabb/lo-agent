@@ -57,4 +57,48 @@ describe('ExtensionRegistry', () => {
     reg.clear();
     expect(reg.count()).toBe(0);
   });
+
+  it('registerCommands 注册可执行命令（含 handler）', () => {
+    const reg = new ExtensionRegistry();
+    const handler = jest.fn();
+    const defs = [
+      { id: 'demo.hello', title: 'Hello', handler },
+      { id: 'demo.skip', handler: 'not-a-function' }, // 缺 handler → 跳过
+    ];
+    const registered = reg.registerCommands('demo', defs);
+    expect(registered).toHaveLength(1);
+    expect(reg.count()).toBe(1);
+
+    const cmd = reg.getCommand('demo.hello');
+    expect(cmd).toMatchObject({ id: 'demo.hello', pluginId: 'demo', title: 'Hello' });
+    expect(typeof cmd.handler).toBe('function');
+    expect(reg.getCommand('demo.skip')).toBeNull();
+    expect(reg.listCommands()).toHaveLength(1);
+  });
+
+  it('registerCommands 重复 ID 跳过', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerCommands('a', [{ id: 'dup', handler: () => 1 }]);
+    const reg2 = reg.registerCommands('b', [{ id: 'dup', handler: () => 2 }]);
+    expect(reg2).toHaveLength(0);
+    expect(reg.getCommand('dup').pluginId).toBe('a');
+  });
+
+  it('unregisterByPlugin 同时清理命令', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerCommands('a', [{ id: 'a.cmd', handler: () => 1 }]);
+    reg.registerCommands('b', [{ id: 'b.cmd', handler: () => 2 }]);
+    reg.unregisterByPlugin('a');
+    expect(reg.getCommand('a.cmd')).toBeNull();
+    expect(reg.getCommand('b.cmd')).not.toBeNull();
+    expect(reg.count()).toBe(1);
+  });
+
+  it('clear 清空命令', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerCommands('a', [{ id: 'a.cmd', handler: () => 1 }]);
+    reg.clear();
+    expect(reg.getCommand('a.cmd')).toBeNull();
+    expect(reg.count()).toBe(0);
+  });
 });

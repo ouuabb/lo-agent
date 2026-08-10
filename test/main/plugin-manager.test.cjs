@@ -229,4 +229,87 @@ describe('PluginManager', () => {
     expect(reg.count()).toBe(0);
     expect(reg.listByPlugin('demo-ext')).toEqual([]);
   });
+
+  it('executeCommand 调用插件注册的命令 handler', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-cmd', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-cmd', name: 'Demo Cmd', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          ctx.extensions.registerCommands([
+            {
+              id: 'demo-cmd.hello',
+              title: 'Hello',
+              handler: async (args, cmdCtx) => {
+                const who = args[0] || 'world';
+                const cfg = cmdCtx.config('greeting', 'Hi');
+                return { message: cfg + ', ' + who + '!', pluginId: cmdCtx.pluginId };
+              },
+            },
+          ]);
+        }
+      }
+      module.exports = P;
+    `);
+    // 覆写 plugin.json 加 config
+    const entry = fs.readdirSync(dir).find((d) => d === 'demo-cmd');
+    const pluginDir = path.join(dir, entry);
+    fs.writeFileSync(
+      path.join(pluginDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'demo-cmd',
+        name: 'Demo Cmd',
+        version: '0.1.0',
+        main: 'index.cjs',
+        config: { greeting: { type: 'string', default: '你好' } },
+      }),
+    );
+
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.activate('demo-cmd');
+
+    // 命令已注册
+    const cmd = reg.getCommand('demo-cmd.hello');
+    expect(cmd).toMatchObject({ id: 'demo-cmd.hello', pluginId: 'demo-cmd' });
+
+    // 执行命令
+    const res = await pm.executeCommand('demo-cmd.hello', ['张三']);
+    expect(res).toEqual({
+      pluginId: 'demo-cmd',
+      commandId: 'demo-cmd.hello',
+      result: { message: '你好, 张三!', pluginId: 'demo-cmd' },
+    });
+  });
+
+  it('executeCommand 命令不存在 / 插件未激活时报错', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-noop', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-noop', name: 'Demo Noop', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;
+    `);
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+
+    await expect(pm.executeCommand('nope.missing')).rejects.toThrow(/命令不存在/);
+    await pm.activate('demo-noop');
+    await expect(pm.executeCommand('nope.missing')).rejects.toThrow(/命令不存在/);
+  });
 });

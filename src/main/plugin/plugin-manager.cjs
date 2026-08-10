@@ -152,6 +152,7 @@ class PluginManager {
    *
    * 注入：
    *   - loImpl（ctx.lo 实现，Host Adapter）→ LoCoreService → @lo/client
+   *   - extensionsImpl（ctx.extensions 实现）→ ExtensionRegistry.registerCommands
    *   - configValues（manifest.config 默认值）
    *   - logger
    *
@@ -166,9 +167,49 @@ class PluginManager {
     return new AgentPluginContext({
       pluginId: entry.id,
       loImpl: createLoImpl(this.loCore),
+      extensionsImpl: {
+        registerCommands: (defs) => this._registerCommands(entry.id, defs),
+      },
       logger: fromHost(this.logger).child({ plugin: entry.id }),
       configValues,
     });
+  }
+
+  /**
+   * 将插件的命令注册到 ExtensionRegistry
+   * @param {string} pluginId
+   * @param {Array} defs — [{ id, title?, handler }]
+   */
+  _registerCommands(pluginId, defs) {
+    if (!this.extensionRegistry) {
+      throw new Error(`[plugin] 命令注册失败：extensionRegistry 未注入 (${pluginId})`);
+    }
+    return this.extensionRegistry.registerCommands(pluginId, defs);
+  }
+
+  /**
+   * 执行插件命令（命令执行 Runtime）
+   * @param {string} commandId — 命令 ID（如 'demo-hello.hello'）
+   * @param {Array} [args] — 传给 handler 的参数数组
+   * @returns {Promise<{ pluginId: string, commandId: string, result: any }>}
+   */
+  async executeCommand(commandId, args = []) {
+    if (!this.extensionRegistry) {
+      throw new Error('extensionRegistry 未注入，无法执行命令');
+    }
+    const cmd = this.extensionRegistry.getCommand(commandId);
+    if (!cmd) {
+      throw new Error(`命令不存在: ${commandId}`);
+    }
+    const entry = this._registry.get(cmd.pluginId);
+    if (!entry) {
+      throw new Error(`插件未加载: ${cmd.pluginId}`);
+    }
+    if (entry.state !== 'activated') {
+      throw new Error(`插件未激活: ${cmd.pluginId}`);
+    }
+    const result = await cmd.handler(args, entry.plugin.context);
+    return { pluginId: cmd.pluginId, commandId, result };
   }
 }
 

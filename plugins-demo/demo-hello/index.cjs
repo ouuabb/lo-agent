@@ -42,6 +42,20 @@ class DemoHelloPlugin extends AgentPlugin {
       ctx.logger.warn(`[demo-hello] 获取状态失败: ${e.message}`);
     }
 
+    // 注册可执行命令（命令执行 Runtime）
+    // handler 签名：async (args, ctx) => result
+    ctx.extensions.registerCommands([
+      {
+        id: 'demo-hello.hello',
+        title: 'Demo: Hello',
+        handler: async (args, cmdCtx) => {
+          const who = args[0] || 'world';
+          const cfg = cmdCtx.config('greeting', greeting);
+          return { message: `${cfg}, ${who}!`, status };
+        },
+      },
+    ]);
+
     // 记录激活结果到插件上下文（供验证）
     this._activationResult = { greeting, status };
 
