@@ -1,10 +1,12 @@
 # AGENTS.md
 
 面向 AI 编码助手（opencode 等）的项目规范，供 lo-agent 工程开发时遵循。
+lo 生态总纲是**独立文档**（不依赖任何本地目录布局），定义跨仓库边界与契约铁律；
+如与本文档同处一个工作区，先读生态总纲再进入本仓库。
 
 ## 项目概况
 
-lo Agent 是 lo（log）知识库的 Electron 桌面端。它与 `log`（lo Core）同级，
+lo Agent 是 lo（lo Core）知识库的 Electron 桌面端。它与 `lo`（lo Core 仓库）同级，
 通过 Electron 主进程 + `@lo/client`（本地 SDK）连接 lo 核心的 HTTP/SSH 协议：
 配置仓库地址、SSH 挑战-应答登录、获取仓库状态与资源列表。
 
@@ -56,5 +58,5 @@ lo Agent 是 lo（log）知识库的 Electron 桌面端。它与 `log`（lo Core
 ## 注意事项
 
 - 不要修改 `node_modules/`、`dist/`、`out/` 等生成目录。
-- 与 lo Core 交互优先复用 `log`/`lo-plugins-sdk` 的既有契约（事件名用点号如 `resource.created`）。
+- 与 lo Core 交互优先复用 `lo`/`lo-plugins-sdk` 的既有契约（事件名用点号如 `resource.created`）。
 - 新增主进程文件需遵循 Electron 安全基线，不透传任意 IPC 调用。
