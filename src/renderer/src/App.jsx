@@ -28,6 +28,7 @@ export default function App() {
   const [sidebarWidth, setSidebarWidth] = useState(220);
   const [resizing, setResizing] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
+  const [commandOpen, setCommandOpen] = useState(false);
   const [config, setConfig] = useState({ host: '127.0.0.1', port: 8765, protocol: 'http' });
   const [privateKeyPath, setPrivateKeyPath] = useState('');
   const [busy, setBusy] = useState(false);
@@ -409,6 +410,17 @@ useEffect(() => {
         </button>
         <div className="topbar-spacer" />
         <button
+          className="rail-btn"
+          type="button"
+          title="插件命令"
+          aria-label="插件命令"
+          onClick={() => setCommandOpen(true)}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 17h6M14 17h6M9 11h6M4 5h6M14 5h6" />
+          </svg>
+        </button>
+        <button
           className={`conn-dot ${authenticated ? 'on' : ''}`}
           type="button"
           title={authenticated ? '已登录，点击重新登录/登出' : '未连接，点击登录'}
@@ -626,8 +638,86 @@ useEffect(() => {
             </div>
           </Modal>
         )}
+
+        {commandOpen && (
+          <Modal title="插件命令" onClose={() => setCommandOpen(false)}>
+            <CommandPanel onNotify={notify} onClose={() => setCommandOpen(false)} />
+          </Modal>
+        )}
       </div>
     </div>
+  );
+}
+
+function CommandPanel(props) {
+  const { onNotify, onClose } = props;
+  const [commands, setCommands] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const api = window.loAgent && window.loAgent.plugins;
+    if (!api) {
+      if (onNotify) onNotify('插件系统未就绪');
+      setLoading(false);
+      return;
+    }
+    const res = await api.list();
+    setLoading(false);
+    if (res.ok) setCommands(res.commands || []);
+    else if (onNotify) onNotify(`获取命令失败: ${res.error}`);
+  }, [onNotify]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const run = useCallback(
+    async (cmd) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api) return;
+      setBusy(true);
+      const res = await api.execute(cmd.id, []);
+      setBusy(false);
+      if (onNotify) {
+        onNotify(res.ok ? `已执行: ${cmd.title}` : `执行失败: ${res.error}`);
+      }
+      if (onClose) onClose();
+    },
+    [onNotify, onClose],
+  );
+
+  return (
+    <section className="panel-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>已注册命令</h3>
+        <button className="btn ghost" onClick={refresh} disabled={busy || loading}>
+          {loading ? '加载中…' : '刷新'}
+        </button>
+      </div>
+      {commands.length === 0 ? (
+        <p className="empty">{loading ? '加载中…' : '暂无插件命令'}</p>
+      ) : (
+        <ul className="command-list">
+          {commands.map((c) => (
+            <li key={c.id} className="command-item">
+              <div className="command-info">
+                <span className="command-title">{c.title}</span>
+                <span className="muted">{c.pluginId}</span>
+              </div>
+              <button
+                className="btn primary"
+                type="button"
+                disabled={busy}
+                onClick={() => run(c)}
+              >
+                执行
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

@@ -21,6 +21,8 @@ const CHANNEL = {
   EVENTS_SUBSCRIBE: 'lo-core:events-subscribe',
   EVENTS_UNSUBSCRIBE: 'lo-core:events-unsubscribe',
   EVENTS_PUSH: 'lo-core:event',
+  PLUGINS_LIST: 'agent-plugins:list-commands',
+  PLUGINS_EXECUTE: 'agent-plugins:execute-command',
   WIN_MINIMIZE: 'window:minimize',
   WIN_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
   WIN_CLOSE: 'window:close',
@@ -55,6 +57,11 @@ contextBridge.exposeInMainWorld('loAgent', {
         return () => ipcRenderer.removeListener(CHANNEL.EVENTS_PUSH, listener);
       },
     },
+  },
+  plugins: {
+    list: () => ipcRenderer.invoke(CHANNEL.PLUGINS_LIST),
+    execute: (commandId, args) =>
+      ipcRenderer.invoke(CHANNEL.PLUGINS_EXECUTE, commandId, args),
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke(CHANNEL.WIN_MINIMIZE),

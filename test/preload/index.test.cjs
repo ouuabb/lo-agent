@@ -39,6 +39,9 @@ describe('src/preload/index.cjs', () => {
     expect(api.loCore.events.subscribe).toBeDefined();
     expect(api.loCore.events.unsubscribe).toBeDefined();
     expect(api.loCore.events.onEvent).toBeDefined();
+    expect(api.plugins).toBeDefined();
+    expect(api.plugins.list).toBeDefined();
+    expect(api.plugins.execute).toBeDefined();
   });
 
   it('loCore 方法转发到对应 IPC 通道', () => {
@@ -59,8 +62,10 @@ describe('src/preload/index.cjs', () => {
     api.loCore.operations.list({ limit: 5 });
     api.loCore.operations.undo('op_1');
     api.loCore.relations.list('res_1');
+    api.plugins.list();
+    api.plugins.execute('demo.hello', ['world']);
 
-    expect(mockInvoke).toHaveBeenCalledTimes(13);
+    expect(mockInvoke).toHaveBeenCalledTimes(15);
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'lo-core:config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'lo-core:configure', { host: 'h' });
     expect(mockInvoke).toHaveBeenNthCalledWith(3, 'lo-core:login', 'x-invalid-arg');
@@ -74,6 +79,8 @@ describe('src/preload/index.cjs', () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(11, 'lo-core:operations', { limit: 5 });
     expect(mockInvoke).toHaveBeenNthCalledWith(12, 'lo-core:operation-undo', 'op_1');
     expect(mockInvoke).toHaveBeenNthCalledWith(13, 'lo-core:relations', 'res_1');
+    expect(mockInvoke).toHaveBeenNthCalledWith(14, 'agent-plugins:list-commands');
+    expect(mockInvoke).toHaveBeenNthCalledWith(15, 'agent-plugins:execute-command', 'demo.hello', ['world']);
   });
 
   it('events.onEvent 注册 EVENTS_PUSH 监听并返回退订函数', () => {

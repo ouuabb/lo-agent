@@ -11,6 +11,7 @@ const { ConfigStore } = require('./config-store.cjs');
 const { registerLoCoreIpc } = require('./ipc.cjs');
 const { PluginManager } = require('./plugin/plugin-manager.cjs');
 const { ExtensionRegistry } = require('./plugin/extension-registry.cjs');
+const { registerPluginIpc } = require('./plugin/plugin-ipc.cjs');
 
 const RENDERER_URL = process.env.ELECTRON_RENDERER_URL;
 
@@ -40,6 +41,8 @@ function initPlugins() {
     logger: console,
   });
   pluginManager.extensionRegistry = extensionRegistry;
+  // 插件能力白名单 IPC（命令列表/执行），不透传实例
+  registerPluginIpc(ipcMain, pluginManager);
 }
 
 function registerWindowControls() {
