@@ -26,6 +26,12 @@ jobs:
           repository: ouuabb/lo-client-sdk
           path: lo-client-sdk
 
+      - name: Checkout dependency lo-agent-plugins-sdk
+        uses: actions/checkout@v5
+        with:
+          repository: ouuabb/lo-agent-plugins-sdk
+          path: lo-agent-plugins-sdk
+
       - name: Setup Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v5
         with:
