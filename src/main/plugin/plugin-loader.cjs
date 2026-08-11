@@ -101,6 +101,12 @@ class PluginLoader {
 
     return { id: manifest.id, dir: pluginDir, manifest, plugin };
   }
+
+  /** 删除插件目录（卸载时清理，避免重启后重新发现） */
+  remove(pluginDir) {
+    if (!pluginDir || !fs.existsSync(pluginDir)) return;
+    fs.rmSync(pluginDir, { recursive: true, force: true });
+  }
 }
 
 module.exports = { PluginLoader };

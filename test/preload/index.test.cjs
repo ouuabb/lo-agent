@@ -46,6 +46,13 @@ describe('src/preload/index.cjs', () => {
     expect(api.plugins.views.list).toBeDefined();
     expect(api.plugins.views.render).toBeDefined();
     expect(api.plugins.install).toBeDefined();
+    expect(api.plugins.manage).toBeDefined();
+    expect(api.plugins.manage.list).toBeDefined();
+    expect(api.plugins.manage.enable).toBeDefined();
+    expect(api.plugins.manage.disable).toBeDefined();
+    expect(api.plugins.manage.uninstall).toBeDefined();
+    expect(api.plugins.manage.getConfig).toBeDefined();
+    expect(api.plugins.manage.setConfig).toBeDefined();
   });
 
   it('loCore 方法转发到对应 IPC 通道', () => {
@@ -71,8 +78,14 @@ describe('src/preload/index.cjs', () => {
     api.plugins.views.list();
     api.plugins.views.render('demo.status', { rid: 'r1' });
     api.plugins.install('demo', 'https://example.com', { force: true });
+    api.plugins.manage.list();
+    api.plugins.manage.enable('demo');
+    api.plugins.manage.disable('demo');
+    api.plugins.manage.uninstall('demo');
+    api.plugins.manage.getConfig('demo');
+    api.plugins.manage.setConfig('demo', 'greeting', '你好');
 
-    expect(mockInvoke).toHaveBeenCalledTimes(18);
+    expect(mockInvoke).toHaveBeenCalledTimes(24);
     expect(mockInvoke).toHaveBeenNthCalledWith(1, 'lo-core:config');
     expect(mockInvoke).toHaveBeenNthCalledWith(2, 'lo-core:configure', { host: 'h' });
     expect(mockInvoke).toHaveBeenNthCalledWith(3, 'lo-core:login', 'x-invalid-arg');
@@ -91,6 +104,12 @@ describe('src/preload/index.cjs', () => {
     expect(mockInvoke).toHaveBeenNthCalledWith(16, 'agent-plugins:list-views');
     expect(mockInvoke).toHaveBeenNthCalledWith(17, 'agent-plugins:render-view', 'demo.status', { rid: 'r1' });
     expect(mockInvoke).toHaveBeenNthCalledWith(18, 'agent-plugins:install', 'demo', 'https://example.com', { force: true });
+    expect(mockInvoke).toHaveBeenNthCalledWith(19, 'agent-plugins:list-plugins');
+    expect(mockInvoke).toHaveBeenNthCalledWith(20, 'agent-plugins:enable', 'demo');
+    expect(mockInvoke).toHaveBeenNthCalledWith(21, 'agent-plugins:disable', 'demo');
+    expect(mockInvoke).toHaveBeenNthCalledWith(22, 'agent-plugins:uninstall', 'demo');
+    expect(mockInvoke).toHaveBeenNthCalledWith(23, 'agent-plugins:get-plugin-config', 'demo');
+    expect(mockInvoke).toHaveBeenNthCalledWith(24, 'agent-plugins:set-plugin-config', 'demo', 'greeting', '你好');
   });
 
   it('events.onEvent 注册 EVENTS_PUSH 监听并返回退订函数', () => {

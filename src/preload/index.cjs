@@ -26,6 +26,12 @@ const CHANNEL = {
   PLUGINS_VIEWS: 'agent-plugins:list-views',
   PLUGINS_RENDER_VIEW: 'agent-plugins:render-view',
   PLUGINS_INSTALL: 'agent-plugins:install',
+  PLUGINS_MANAGE_LIST: 'agent-plugins:list-plugins',
+  PLUGINS_MANAGE_ENABLE: 'agent-plugins:enable',
+  PLUGINS_MANAGE_DISABLE: 'agent-plugins:disable',
+  PLUGINS_MANAGE_UNINSTALL: 'agent-plugins:uninstall',
+  PLUGINS_MANAGE_GET_CONFIG: 'agent-plugins:get-plugin-config',
+  PLUGINS_MANAGE_SET_CONFIG: 'agent-plugins:set-plugin-config',
   WIN_MINIMIZE: 'window:minimize',
   WIN_TOGGLE_MAXIMIZE: 'window:toggle-maximize',
   WIN_CLOSE: 'window:close',
@@ -72,6 +78,15 @@ contextBridge.exposeInMainWorld('loAgent', {
     },
     install: (id, registryUrl, options) =>
       ipcRenderer.invoke(CHANNEL.PLUGINS_INSTALL, id, registryUrl, options),
+    manage: {
+      list: () => ipcRenderer.invoke(CHANNEL.PLUGINS_MANAGE_LIST),
+      enable: (id) => ipcRenderer.invoke(CHANNEL.PLUGINS_MANAGE_ENABLE, id),
+      disable: (id) => ipcRenderer.invoke(CHANNEL.PLUGINS_MANAGE_DISABLE, id),
+      uninstall: (id) => ipcRenderer.invoke(CHANNEL.PLUGINS_MANAGE_UNINSTALL, id),
+      getConfig: (id) => ipcRenderer.invoke(CHANNEL.PLUGINS_MANAGE_GET_CONFIG, id),
+      setConfig: (id, key, value) =>
+        ipcRenderer.invoke(CHANNEL.PLUGINS_MANAGE_SET_CONFIG, id, key, value),
+    },
   },
   windowControls: {
     minimize: () => ipcRenderer.invoke(CHANNEL.WIN_MINIMIZE),

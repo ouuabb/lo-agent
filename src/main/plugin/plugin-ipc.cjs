@@ -15,6 +15,12 @@ const CHANNELS = {
   LIST_VIEWS: 'agent-plugins:list-views',
   RENDER_VIEW: 'agent-plugins:render-view',
   INSTALL: 'agent-plugins:install',
+  LIST_PLUGINS: 'agent-plugins:list-plugins',
+  ENABLE: 'agent-plugins:enable',
+  DISABLE: 'agent-plugins:disable',
+  UNINSTALL: 'agent-plugins:uninstall',
+  GET_PLUGIN_CONFIG: 'agent-plugins:get-plugin-config',
+  SET_PLUGIN_CONFIG: 'agent-plugins:set-plugin-config',
 };
 
 /**
@@ -68,6 +74,69 @@ function registerPluginIpc(ipcMain, pluginManager) {
       if (!pluginManager) throw new Error('插件系统未初始化');
       const result = await pluginManager.install(id, registryUrl, options || {});
       return { ok: true, result };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 列出已安装插件（管理面板：id/name/version/state/enabled/权限/配置 schema）
+  ipcMain.handle(CHANNELS.LIST_PLUGINS, () => {
+    if (!pluginManager || typeof pluginManager.listForUi !== 'function') {
+      return { ok: true, plugins: [] };
+    }
+    return { ok: true, plugins: pluginManager.listForUi() };
+  });
+
+  // 启用插件
+  ipcMain.handle(CHANNELS.ENABLE, async (_event, id) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const plugin = await pluginManager.enable(id);
+      return { ok: true, plugin };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 禁用插件（完全禁用：清理扩展点并停用）
+  ipcMain.handle(CHANNELS.DISABLE, async (_event, id) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const plugin = await pluginManager.disable(id);
+      return { ok: true, plugin };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 卸载插件（删除目录 + 清理配置/设置）
+  ipcMain.handle(CHANNELS.UNINSTALL, async (_event, id) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const result = await pluginManager.uninstall(id);
+      return { ok: true, result };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 读取插件配置值（用户持久化值）
+  ipcMain.handle(CHANNELS.GET_PLUGIN_CONFIG, async (_event, id) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const config = pluginManager.getConfig(id);
+      return { ok: true, config };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 设置插件单条配置并落盘
+  ipcMain.handle(CHANNELS.SET_PLUGIN_CONFIG, async (_event, id, key, value) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const config = pluginManager.setConfig(id, key, value);
+      return { ok: true, config };
     } catch (e) {
       return { ok: false, error: e.message };
     }

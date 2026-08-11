@@ -30,6 +30,7 @@ export default function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [config, setConfig] = useState({ host: '127.0.0.1', port: 8765, protocol: 'http' });
   const [privateKeyPath, setPrivateKeyPath] = useState('');
   const [busy, setBusy] = useState(false);
@@ -434,6 +435,20 @@ useEffect(() => {
           </svg>
         </button>
         <button
+          className="rail-btn"
+          type="button"
+          title="插件管理"
+          aria-label="插件管理"
+          onClick={() => setPluginsOpen(true)}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <path d="M4 5h16M4 12h10M4 19h7M14 12h6M11 19h9" />
+            <circle cx="10" cy="5" r="1.6" />
+            <circle cx="12" cy="12" r="1.6" />
+            <circle cx="9" cy="19" r="1.6" />
+          </svg>
+        </button>
+        <button
           className={`conn-dot ${authenticated ? 'on' : ''}`}
           type="button"
           title={authenticated ? '已登录，点击重新登录/登出' : '未连接，点击登录'}
@@ -663,8 +678,352 @@ useEffect(() => {
             <ViewPanel onNotify={notify} />
           </Modal>
         )}
+
+        {pluginsOpen && (
+          <Modal title="插件管理" onClose={() => setPluginsOpen(false)}>
+            <PluginPanel onNotify={notify} />
+          </Modal>
+        )}
       </div>
     </div>
+  );
+}
+
+const PLUGIN_STATE_LABEL = {
+  activated: '已激活',
+  deactivated: '已停用',
+  loaded: '已加载',
+};
+
+function PluginPanel(props) {
+  const { onNotify } = props;
+  const [plugins, setPlugins] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState(null);
+  const [expandId, setExpandId] = useState(null);
+  const [configDraft, setConfigDraft] = useState({});
+  const [confirmId, setConfirmId] = useState(null);
+  const [installId, setInstallId] = useState('');
+  const [registryUrl, setRegistryUrl] = useState('');
+  const [installing, setInstalling] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const api = window.loAgent && window.loAgent.plugins;
+    if (!api || !api.manage) {
+      if (onNotify) onNotify('插件系统未就绪');
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    const res = await api.manage.list();
+    setLoading(false);
+    if (res.ok) setPlugins(res.plugins || []);
+    else if (onNotify) onNotify(`获取插件列表失败: ${res.error}`);
+  }, [onNotify]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const toggle = useCallback(
+    async (p) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api || !api.manage) return;
+      setBusyId(p.id);
+      const res = p.enabled
+        ? await api.manage.disable(p.id)
+        : await api.manage.enable(p.id);
+      setBusyId(null);
+      if (res.ok) refresh();
+      else if (onNotify) onNotify(`${p.enabled ? '禁用' : '启用'}失败: ${res.error}`);
+    },
+    [onNotify, refresh],
+  );
+
+  const doUninstall = useCallback(
+    async (p) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api || !api.manage) return;
+      setBusyId(p.id);
+      const res = await api.manage.uninstall(p.id);
+      setBusyId(null);
+      setConfirmId(null);
+      if (res.ok) {
+        if (onNotify) onNotify(`已卸载: ${p.name || p.id}`);
+        refresh();
+      } else if (onNotify) {
+        onNotify(`卸载失败: ${res.error}`);
+      }
+    },
+    [onNotify, refresh],
+  );
+
+  const openConfig = useCallback(
+    async (p) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api || !api.manage) return;
+      if (expandId === p.id) {
+        setExpandId(null);
+        return;
+      }
+      setExpandId(p.id);
+      const res = await api.manage.getConfig(p.id);
+      if (res.ok) {
+        setConfigDraft((prev) => ({ ...prev, [p.id]: { ...(res.config || {}) } }));
+      } else if (onNotify) {
+        onNotify(`读取配置失败: ${res.error}`);
+      }
+    },
+    [expandId, onNotify],
+  );
+
+  const setDraft = useCallback(
+    (pluginId, key, raw) => {
+      const schema = (plugins.find((p) => p.id === pluginId) || {}).config || {};
+      const def = schema[key] || {};
+      let value = raw;
+      if (def.type === 'boolean') {
+        value = !!raw;
+      } else if (def.type === 'number') {
+        value = raw === '' ? '' : Number(raw);
+      }
+      setConfigDraft((prev) => {
+        const draft = prev[pluginId] || {};
+        return { ...prev, [pluginId]: { ...draft, [key]: value } };
+      });
+    },
+    [plugins],
+  );
+
+  const saveConfig = useCallback(
+    async (p) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api || !api.manage) return;
+      const draft = configDraft[p.id] || {};
+      setBusyId(p.id);
+      let ok = true;
+      let firstError = '';
+      for (const [key, value] of Object.entries(draft)) {
+        const res = await api.manage.setConfig(p.id, key, value);
+        if (!res.ok) {
+          ok = false;
+          firstError = `${key}: ${res.error}`;
+        }
+      }
+      setBusyId(null);
+      if (ok) {
+        if (onNotify) onNotify('配置已保存');
+        setExpandId(null);
+        refresh();
+      } else if (onNotify) {
+        onNotify(`保存配置失败: ${firstError}`);
+      }
+    },
+    [configDraft, onNotify, refresh],
+  );
+
+  const doInstall = useCallback(async () => {
+    const api = window.loAgent && window.loAgent.plugins;
+    if (!api || !api.install) return;
+    setInstalling(true);
+    const res = await api.install(installId.trim(), registryUrl.trim(), {});
+    setInstalling(false);
+    if (res.ok) {
+      if (onNotify) onNotify(`已安装: ${installId.trim()}，可在列表启用`);
+      setInstallId('');
+      setRegistryUrl('');
+      refresh();
+    } else if (onNotify) {
+      onNotify(`安装失败: ${res.error}`);
+    }
+  }, [installId, registryUrl, onNotify, refresh]);
+
+  const renderPermissions = (p) => {
+    const perms = p.permissions || {};
+    const caps = Object.entries(perms).flatMap(([ns, v]) =>
+      Array.isArray(v) ? v.map((cap) => `${ns}.${cap}`) : v ? [ns] : [],
+    );
+    if (caps.length === 0) return <div className="muted">权限：默认只读（无写能力）</div>;
+    return (
+      <div className="plugin-caps">
+        {caps.map((cap) => (
+          <span key={cap} className="name-badge">
+            {cap}
+          </span>
+        ))}
+      </div>
+    );
+  };
+
+  const renderConfigEditor = (p) => {
+    const schema = p.config || {};
+    const keys = Object.keys(schema);
+    if (keys.length === 0) {
+      return <div className="muted">该插件未声明可配置项（manifest.config 为空）</div>;
+    }
+    const draft = configDraft[p.id] || {};
+    return (
+      <div className="plugin-config">
+        {keys.map((key) => {
+          const def = schema[key] || {};
+          const has = key in draft;
+          const current = has ? draft[key] : def.default;
+          const value = current === undefined || current === null ? '' : current;
+          return (
+            <label key={key} className="config-row">
+              <span className="config-label">
+                {key}
+                {def.description && <span className="muted"> · {def.description}</span>}
+              </span>
+              {def.type === 'boolean' ? (
+                <input
+                  type="checkbox"
+                  checked={!!value}
+                  onChange={(e) => setDraft(p.id, key, e.target.checked)}
+                />
+              ) : def.type === 'number' ? (
+                <input
+                  type="number"
+                  value={value}
+                  onChange={(e) => setDraft(p.id, key, e.target.value)}
+                />
+              ) : (
+                <input
+                  type="text"
+                  value={value}
+                  onChange={(e) => setDraft(p.id, key, e.target.value)}
+                />
+              )}
+            </label>
+          );
+        })}
+        <div className="plugin-config-actions">
+          <button
+            className="btn primary"
+            type="button"
+            disabled={busyId === p.id}
+            onClick={() => saveConfig(p)}
+          >
+            {busyId === p.id ? '保存中…' : '保存配置'}
+          </button>
+          <button className="btn ghost" type="button" onClick={() => setExpandId(null)}>
+            收起
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return (
+    <>
+      <section className="panel-card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0, fontSize: 14 }}>已安装插件</h3>
+          <button className="btn ghost" onClick={refresh} disabled={loading || !!busyId}>
+            {loading ? '加载中…' : '刷新'}
+          </button>
+        </div>
+        {plugins.length === 0 ? (
+          <p className="empty">{loading ? '加载中…' : '暂无已安装插件'}</p>
+        ) : (
+          <ul className="plugin-list">
+            {plugins.map((p) => (
+              <li key={p.id} className="plugin-item">
+                <div className="plugin-item-head">
+                  <div className="plugin-info">
+                    <div className="plugin-name">
+                      {p.name || p.id}
+                      <span className="plugin-version">v{p.version}</span>
+                    </div>
+                    <div className="plugin-meta muted">
+                      {p.id} · {PLUGIN_STATE_LABEL[p.state] || p.state} ·{' '}
+                      {p.enabled ? '启用' : '禁用'}
+                    </div>
+                    {p.description && <div className="plugin-desc muted">{p.description}</div>}
+                  </div>
+                  <div className="plugin-actions">
+                    <button
+                      className="btn ghost"
+                      type="button"
+                      disabled={busyId === p.id}
+                      onClick={() => openConfig(p)}
+                    >
+                      {expandId === p.id ? '收起' : '配置'}
+                    </button>
+                    <button
+                      className="btn primary"
+                      type="button"
+                      disabled={busyId === p.id}
+                      onClick={() => toggle(p)}
+                    >
+                      {p.enabled ? '禁用' : '启用'}
+                    </button>
+                    <button
+                      className="btn ghost danger"
+                      type="button"
+                      disabled={busyId === p.id}
+                      onClick={() => setConfirmId(p.id)}
+                    >
+                      卸载
+                    </button>
+                  </div>
+                </div>
+
+                {expandId === p.id && (
+                  <div className="plugin-detail">
+                    {renderPermissions(p)}
+                    {renderConfigEditor(p)}
+                  </div>
+                )}
+
+                {confirmId === p.id && (
+                  <div className="plugin-confirm">
+                    <span className="muted">卸载将删除插件文件与配置数据，确定卸载？</span>
+                    <div>
+                      <button
+                        className="btn primary"
+                        type="button"
+                        disabled={busyId === p.id}
+                        onClick={() => doUninstall(p)}
+                      >
+                        {busyId === p.id ? '卸载中…' : '确认卸载'}
+                      </button>
+                      <button className="btn ghost" type="button" onClick={() => setConfirmId(null)}>
+                        取消
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="panel-card">
+        <h3 style={{ margin: '0 0 12px', fontSize: 14 }}>安装插件</h3>
+        <div className="plugin-install">
+          <input
+            value={installId}
+            onChange={(e) => setInstallId(e.target.value)}
+            placeholder="插件 ID（如 demo-hello）"
+          />
+          <input
+            value={registryUrl}
+            onChange={(e) => setRegistryUrl(e.target.value)}
+            placeholder="分发仓库 URL 或本地路径"
+          />
+          <button
+            className="btn primary"
+            type="button"
+            disabled={installing || !installId.trim() || !registryUrl.trim()}
+            onClick={doInstall}
+          >
+            {installing ? '安装中…' : '安装'}
+          </button>
+        </div>
+      </section>
+    </>
   );
 }
 

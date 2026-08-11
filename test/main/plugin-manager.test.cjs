@@ -642,4 +642,123 @@ describe('PluginManager', () => {
     const plugin = pm.get('demo-from-reg');
     expect(plugin).toBeTruthy();
   });
+
+  it('listForUi 返回策展插件清单（不透传 main 等内部字段）', async () => {
+    const dir = makePluginsDir();
+    const pluginDir = writePlugin(dir, 'demo-ui', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-ui', name: 'Demo UI', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;
+    `);
+    fs.writeFileSync(
+      path.join(pluginDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'demo-ui',
+        name: 'Demo UI',
+        version: '0.1.0',
+        main: 'index.cjs',
+        description: 'UI 演示插件',
+        author: 'lo',
+        permissions: { lo: ['health.read'] },
+        contributes: { commands: [{ id: 'demo-ui.open', title: '打开' }] },
+        config: { title: { type: 'string', default: '你好' } },
+      }),
+    );
+
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+    });
+    await pm.initialize();
+
+    const ui = pm.listForUi();
+    expect(ui).toHaveLength(1);
+    expect(ui[0]).toEqual({
+      id: 'demo-ui',
+      name: 'Demo UI',
+      version: '0.1.0',
+      description: 'UI 演示插件',
+      author: 'lo',
+      state: 'loaded',
+      enabled: false,
+      permissions: { lo: ['health.read'] },
+      contributes: { commands: [{ id: 'demo-ui.open', title: '打开' }] },
+      config: { title: { type: 'string', default: '你好' } },
+    });
+    expect('main' in ui[0]).toBe(false);
+    expect('manifest' in ui[0]).toBe(false);
+  });
+
+  it('disable 完全禁用（清理扩展点并停用），重新 enable 恢复注册', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-tog', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-tog', name: 'Demo Tog', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          ctx.extensions.registerCommands([{ id: 'demo-tog.hello', title: 'Hello', handler: async () => 'hi' }]);
+          ctx.extensions.registerView([{ id: 'demo-tog.status', title: '状态', type: 'panel', render: async () => '<p>x</p>' }]);
+        }
+      }
+      module.exports = P;
+    `);
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.enable('demo-tog');
+    expect(reg.count()).toBe(2);
+    expect(reg.getCommand('demo-tog.hello')).not.toBeNull();
+
+    const afterDisable = await pm.disable('demo-tog');
+    expect(afterDisable.enabled).toBe(false);
+    expect(afterDisable.state).toBe('deactivated');
+    expect(reg.count()).toBe(0);
+    expect(reg.getCommand('demo-tog.hello')).toBeNull();
+    expect(reg.getView('demo-tog.status')).toBeNull();
+
+    // 重新启用恢复注册
+    await pm.enable('demo-tog');
+    expect(reg.count()).toBe(2);
+    expect(reg.getCommand('demo-tog.hello')).not.toBeNull();
+    expect(reg.getView('demo-tog.status')).not.toBeNull();
+  });
+
+  it('uninstall 删除插件目录与配置', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-rm', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-rm', name: 'Demo Rm', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;
+    `);
+    const { PluginStore } = require('../../src/main/plugin/plugin-store.cjs');
+    const store = new PluginStore(path.join(dir, 'userdata'));
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      pluginStore: store,
+    });
+    await pm.initialize();
+    const pluginDir = path.join(dir, 'demo-rm');
+    expect(fs.existsSync(pluginDir)).toBe(true);
+
+    pm.setConfig('demo-rm', 'k', 'v');
+    await pm.uninstall('demo-rm');
+
+    expect(pm.get('demo-rm')).toBeNull();
+    expect(fs.existsSync(pluginDir)).toBe(false);
+    expect(pm.getConfig('demo-rm')).toEqual({});
+  });
 });

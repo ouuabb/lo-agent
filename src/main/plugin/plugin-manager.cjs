@@ -153,6 +153,28 @@ class PluginManager {
     }));
   }
 
+  /**
+   * 列出插件（策展形状，供管理面板 UI 使用）
+   * 只暴露插件声明的元信息与权限/配置 schema，不透传 main 入口等内部字段。
+   */
+  listForUi() {
+    return Array.from(this._registry.values()).map((e) => {
+      const m = e.manifest || {};
+      return {
+        id: e.id,
+        name: m.name || e.id,
+        version: m.version || '',
+        description: m.description || '',
+        author: m.author || '',
+        state: e.state,
+        enabled: !!e.enabled,
+        permissions: m.permissions || {},
+        contributes: m.contributes || {},
+        config: m.config || {},
+      };
+    });
+  }
+
   /** 获取插件实例 */
   get(id) {
     const e = this._registry.get(id);
@@ -235,7 +257,7 @@ class PluginManager {
     return this.list().find((x) => x.id === id);
   }
 
-  /** 禁用插件（调用 plugin.disable） */
+  /** 禁用插件（调用 plugin.disable，并完全禁用：清理扩展点 + 停用） */
   async disable(id) {
     const entry = this._registry.get(id);
     if (!entry) return;
@@ -243,6 +265,16 @@ class PluginManager {
       await entry.plugin.disable();
     }
     entry.enabled = false;
+    // 完全禁用：命令/视图从注册表移除；再次 enable 时 activate 重新注册
+    if (this.extensionRegistry) {
+      this.extensionRegistry.unregisterByPlugin(id);
+    }
+    if (entry.state === 'activated') {
+      if (typeof entry.plugin.deactivate === 'function') {
+        await entry.plugin.deactivate();
+      }
+      entry.state = 'deactivated';
+    }
     return this.list().find((x) => x.id === id);
   }
 
@@ -290,10 +322,14 @@ class PluginManager {
 
   // ── 卸载 ──
 
-  /** 卸载插件（deactivate + dispose + 清理配置/设置/扩展点） */
+  /** 卸载插件（deactivate + dispose + 删除目录 + 清理配置/设置/扩展点） */
   async uninstall(id) {
+    const entry = this._registry.get(id);
     await this.deactivate(id);
     await this.dispose(id);
+    if (entry && entry.dir) {
+      this.loader.remove(entry.dir);
+    }
     if (this.pluginStore) this.pluginStore.clearPlugin(id);
     return { ok: true, id };
   }
