@@ -27,6 +27,9 @@
     ],
     "panels": [
       { "id": "demo-hello.side", "title": "Demo: 侧栏" }
+    ],
+    "services": [
+      { "id": "demo-hello.status-service", "title": "Demo: 状态服务" }
     ]
   }
 }

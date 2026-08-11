@@ -84,6 +84,19 @@ class DemoHelloPlugin extends AgentPlugin {
       },
     ]);
 
+    // 注册插件服务（供其他插件经 ctx.extensions.getService 消费）
+    ctx.extensions.registerService([
+      {
+        id: 'demo-hello.status-service',
+        title: 'Demo: 状态服务',
+        version: '1.0.0',
+        api: {
+          getStatus: async () => status,
+          getGreeting: () => greeting,
+        },
+      },
+    ]);
+
     // 记录激活结果到插件上下文（供验证）
     this._activationResult = { greeting, status };
 

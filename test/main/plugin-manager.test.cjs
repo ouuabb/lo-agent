@@ -313,6 +313,85 @@ describe('PluginManager', () => {
     await expect(pm.executeCommand('nope.missing')).rejects.toThrow(/命令不存在/);
   });
 
+  it('插件服务：registerService 注册、getService 消费、disable 清理', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'svc-provider', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'svc-provider', name: 'Svc Provider', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          ctx.extensions.registerService([
+            {
+              id: 'svc-provider.health',
+              title: '健康查询服务',
+              version: '1.0.0',
+              api: {
+                stats: async () => ({ totalResources: 42 }),
+                markup: () => 'provider-markup',
+              },
+            },
+          ]);
+        }
+      }
+      module.exports = P;
+    `);
+    writePlugin(dir, 'svc-consumer', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'svc-consumer', name: 'Svc Consumer', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          this._all = ctx.extensions.listServices().map((s) => s.id);
+          this._missing = ctx.extensions.getService('nope.missing');
+          const svc = ctx.extensions.getService('svc-provider.health');
+          if (svc) {
+            this._stats = await svc.stats();
+            this._markup = svc.markup();
+          } else {
+            this._noService = true;
+          }
+        }
+      }
+      module.exports = P;
+    `);
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.activate('svc-provider');
+    await pm.activate('svc-consumer');
+
+    // 服务已注册，listServices 只暴露元信息
+    expect(reg.getService('svc-provider.health')).toMatchObject({
+      id: 'svc-provider.health',
+      pluginId: 'svc-provider',
+      title: '健康查询服务',
+      version: '1.0.0',
+    });
+    expect(pm.listServices()).toEqual([
+      { id: 'svc-provider.health', pluginId: 'svc-provider', title: '健康查询服务', version: '1.0.0' },
+    ]);
+
+    // 消费插件经 ctx.extensions.getService 拿到提供者 api 并调用成功
+    const consumer = pm.get('svc-consumer');
+    expect(consumer._noService).toBeUndefined();
+    expect(consumer._missing).toBeNull();
+    expect(consumer._stats).toEqual({ totalResources: 42 });
+    expect(consumer._markup).toBe('provider-markup');
+    expect(consumer._all).toEqual(['svc-provider.health']);
+    // 消费插件 context 也可直接拿 api（经 ctx.lo 之外的契约门面）
+    expect(pm.getService('svc-provider.health').markup()).toBe('provider-markup');
+
+    // disable 提供者 → 服务从注册表移除，消费方再取为 null
+    await pm.disable('svc-provider');
+    expect(reg.getService('svc-provider.health')).toBeNull();
+    expect(pm.listServices()).toEqual([]);
+    expect(pm.getService('svc-provider.health')).toBeNull();
+  });
+
   it('权限模型：未声明写权限的插件调用 ctx.lo 写操作被拒', async () => {
     const dir = makePluginsDir();
     writePlugin(dir, 'demo-readonly', `

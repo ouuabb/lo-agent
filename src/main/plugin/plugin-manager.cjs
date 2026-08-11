@@ -182,6 +182,23 @@ class PluginManager {
   }
 
   /**
+   * 获取插件服务 api（插件间通信：消费者按服务 ID 取提供者的 api）
+   * @param {string} serviceId — 服务 ID（如 'demo.status-service'）
+   * @returns {object|null} 服务的 api 对象；不存在/未注入注册表返回 null
+   */
+  getService(serviceId) {
+    if (!this.extensionRegistry) return null;
+    const svc = this.extensionRegistry.getService(serviceId);
+    return svc ? svc.api : null;
+  }
+
+  /** 列出宿主内全部插件服务（元信息，不含 api） */
+  listServices() {
+    if (!this.extensionRegistry) return [];
+    return this.extensionRegistry.listServices();
+  }
+
+  /**
    * 构造插件 Context —— 用 SDK AgentPluginContext 实例化
    *
    * 注入：
@@ -206,6 +223,9 @@ class PluginManager {
       extensionsImpl: {
         registerCommands: (defs) => this._registerCommands(entry.id, defs),
         registerView: (defs) => this._registerViews(entry.id, defs),
+        registerService: (defs) => this._registerServices(entry.id, defs),
+        getService: (id) => this.getService(id),
+        listServices: () => this.listServices(),
       },
       permissions: resolvePermissions(entry.manifest.permissions),
       logger: fromHost(this.logger).child({ plugin: entry.id }),
@@ -356,6 +376,18 @@ class PluginManager {
       throw new Error(`[plugin] 视图注册失败：extensionRegistry 未注入 (${pluginId})`);
     }
     return this.extensionRegistry.registerViews(pluginId, defs);
+  }
+
+  /**
+   * 将插件的服务注册到 ExtensionRegistry（供其他插件消费）
+   * @param {string} pluginId
+   * @param {Array} defs — [{ id, title?, version?, api }]
+   */
+  _registerServices(pluginId, defs) {
+    if (!this.extensionRegistry) {
+      throw new Error(`[plugin] 服务注册失败：extensionRegistry 未注入 (${pluginId})`);
+    }
+    return this.extensionRegistry.registerServices(pluginId, defs);
   }
 
   /**

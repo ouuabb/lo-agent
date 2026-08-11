@@ -1,13 +1,15 @@
 /**
  * extension-registry.cjs —— 扩展点注册表（Host 实现）
  *
- * 三套数据：
+ * 四套数据：
  *   1. 扩展点声明（纯数据，无 handler）—— 插件激活时经 contributes 解析注册，
  *      供 UI 层发现/展示（命令菜单、视图清单等）。
  *   2. 命令执行器（含 handler）—— 插件激活时经 ctx.extensions.registerCommands
  *      注册，供宿主 PluginManager.executeCommand 调用（命令执行 Runtime）。
  *   3. 视图渲染器（含 render）—— 插件激活时经 ctx.extensions.registerView 注册，
  *      render 返回 HTML 字符串，供宿主经白名单 IPC 交付渲染进程承载。
+ *   4. 服务（含 api）—— 插件激活时经 ctx.extensions.registerService 注册，供
+ *      其他插件经 ctx.extensions.getService 按服务 ID 消费（插件间通信）。
  *
  * 生命周期：
  *   - 插件激活时注册（contributes 解析 + ctx.extensions 动态注册）
@@ -23,6 +25,8 @@ class ExtensionRegistry {
     this._commands = new Map();
     /** @type {Map<string, object>} viewId → { id, pluginId, title, type, render } */
     this._views = new Map();
+    /** @type {Map<string, object>} serviceId → { id, pluginId, title, version, api } */
+    this._services = new Map();
   }
 
   // ── 扩展点声明（纯数据） ──
@@ -84,6 +88,11 @@ class ExtensionRegistry {
     for (const [viewId, view] of this._views) {
       if (view.pluginId === pluginId) {
         this._views.delete(viewId);
+      }
+    }
+    for (const [serviceId, service] of this._services) {
+      if (service.pluginId === pluginId) {
+        this._services.delete(serviceId);
       }
     }
   }
@@ -173,9 +182,63 @@ class ExtensionRegistry {
     return Array.from(this._views.values());
   }
 
+  // ── 服务（含 api，插件间通信） ──
+
+  /**
+   * 注册插件服务（供其他插件经 getService 消费）
+   * @param {string} pluginId — 来源插件 ID
+   * @param {Array<{ id: string, title?: string, version?: string, api: object }>} defs
+   * @returns {object[]} 注册成功的服务
+   */
+  registerServices(pluginId, defs = []) {
+    const registered = [];
+    for (const def of defs) {
+      if (!def || typeof def.id !== 'string' || !def.id) continue;
+      if (!def.api || typeof def.api !== 'object') {
+        console.error(`[extension-registry] 服务缺少 api: ${pluginId}:services:${def.id}`);
+        continue;
+      }
+      if (this._services.has(def.id)) {
+        console.error(`[extension-registry] 服务已存在: ${def.id}`);
+        continue;
+      }
+      const service = {
+        id: def.id,
+        pluginId,
+        title: def.title || def.id,
+        version: def.version || '0.0.0',
+        api: def.api,
+      };
+      this._services.set(def.id, service);
+      registered.push(service);
+    }
+    return registered;
+  }
+
+  /**
+   * 获取服务（含 api）
+   * @returns {object|null} { id, pluginId, title, version, api }，不存在返回 null
+   */
+  getService(id) {
+    return this._services.get(id) || null;
+  }
+
+  /**
+   * 列出全部服务（元信息，不含 api）
+   * @returns {object[]}
+   */
+  listServices() {
+    return Array.from(this._services.values()).map((s) => ({
+      id: s.id,
+      pluginId: s.pluginId,
+      title: s.title,
+      version: s.version,
+    }));
+  }
+
   /** 统计 */
   count() {
-    return this._byKey.size + this._commands.size + this._views.size;
+    return this._byKey.size + this._commands.size + this._views.size + this._services.size;
   }
 
   /** 清空 */
@@ -184,6 +247,7 @@ class ExtensionRegistry {
     this._byKey.clear();
     this._commands.clear();
     this._views.clear();
+    this._services.clear();
   }
 
   /** 按类型列出扩展点 */

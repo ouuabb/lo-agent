@@ -136,4 +136,50 @@ describe('ExtensionRegistry', () => {
     reg.clear();
     expect(reg.listViews()).toHaveLength(0);
   });
+
+  it('registerServices 注册服务（含 api），getService 返回 api', () => {
+    const reg = new ExtensionRegistry();
+    const api = { stats: jest.fn(), markup: () => 'x' };
+    const registered = reg.registerServices('demo', [
+      { id: 'demo.ping', title: 'Ping', version: '1.0.0', api },
+      { id: 'demo.bad', title: 'Bad' }, // 缺 api → 跳过
+    ]);
+    expect(registered).toHaveLength(1);
+    expect(reg.count()).toBe(1);
+
+    const svc = reg.getService('demo.ping');
+    expect(svc).toMatchObject({ id: 'demo.ping', pluginId: 'demo', title: 'Ping', version: '1.0.0' });
+    expect(svc.api).toBe(api);
+    expect(reg.getService('demo.bad')).toBeNull();
+    expect(reg.listServices()).toHaveLength(1);
+  });
+
+  it('registerServices 重复 ID 跳过', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerServices('a', [{ id: 'dup', api: { x: () => 1 } }]);
+    const reg2 = reg.registerServices('b', [{ id: 'dup', api: { x: () => 2 } }]);
+    expect(reg2).toHaveLength(0);
+    expect(reg.getService('dup').pluginId).toBe('a');
+  });
+
+  it('listServices 只暴露元信息（不含 api）', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerServices('a', [{ id: 'a.svc', title: 'A 服务', version: '2.0.0', api: { x: () => 1 } }]);
+    const list = reg.listServices();
+    expect(list).toHaveLength(1);
+    expect(list[0]).toMatchObject({ id: 'a.svc', pluginId: 'a', title: 'A 服务', version: '2.0.0' });
+    expect(list[0].api).toBeUndefined();
+  });
+
+  it('unregisterByPlugin 同时清理服务，clear 清空', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerServices('a', [{ id: 'a.svc', api: { x: () => 1 } }]);
+    reg.registerServices('b', [{ id: 'b.svc', api: { x: () => 2 } }]);
+    reg.unregisterByPlugin('a');
+    expect(reg.getService('a.svc')).toBeNull();
+    expect(reg.getService('b.svc')).not.toBeNull();
+    reg.clear();
+    expect(reg.listServices()).toHaveLength(0);
+    expect(reg.count()).toBe(0);
+  });
 });
