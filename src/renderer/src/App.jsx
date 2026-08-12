@@ -30,6 +30,8 @@ export default function App() {
   const [loginOpen, setLoginOpen] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [config, setConfig] = useState({ host: '127.0.0.1', port: 8765, protocol: 'http' });
   const [privateKeyPath, setPrivateKeyPath] = useState('');
@@ -437,6 +439,30 @@ useEffect(() => {
         <button
           className="rail-btn"
           type="button"
+          title="插件面板"
+          aria-label="插件面板"
+          onClick={() => setPanelOpen(true)}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <rect x="3" y="3" width="7" height="18" rx="1" />
+            <rect x="14" y="3" width="7" height="8" rx="1" />
+            <rect x="14" y="15" width="7" height="6" rx="1" />
+          </svg>
+        </button>
+        <button
+          className="rail-btn"
+          type="button"
+          title="插件编辑器"
+          aria-label="插件编辑器"
+          onClick={() => setEditorOpen(true)}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" />
+          </svg>
+        </button>
+        <button
+          className="rail-btn"
+          type="button"
           title="插件管理"
           aria-label="插件管理"
           onClick={() => setPluginsOpen(true)}
@@ -676,6 +702,18 @@ useEffect(() => {
         {viewOpen && (
           <Modal title="插件视图" onClose={() => setViewOpen(false)}>
             <ViewPanel onNotify={notify} />
+          </Modal>
+        )}
+
+        {panelOpen && (
+          <Modal title="插件面板" onClose={() => setPanelOpen(false)}>
+            <PanelPanel onNotify={notify} />
+          </Modal>
+        )}
+
+        {editorOpen && (
+          <Modal title="插件编辑器" onClose={() => setEditorOpen(false)}>
+            <EditorPanel onNotify={notify} />
           </Modal>
         )}
 
@@ -1099,6 +1137,168 @@ function ViewPanel(props) {
           {active && (
             <div className="plugin-view">
               <div className="plugin-view-title">{views.find((v) => v.id === active)?.title}</div>
+              <div className="plugin-view-body" dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function PanelPanel(props) {
+  const { onNotify } = props;
+  const [panels, setPanels] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState(null);
+  const [html, setHtml] = useState('');
+  const [rendering, setRendering] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const api = window.loAgent && window.loAgent.plugins;
+    if (!api || !api.panels) {
+      if (onNotify) onNotify('插件系统未就绪');
+      setLoading(false);
+      return;
+    }
+    const res = await api.panels.list();
+    setLoading(false);
+    if (res.ok) setPanels(res.panels || []);
+    else if (onNotify) onNotify(`获取面板失败: ${res.error}`);
+  }, [onNotify]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const open = useCallback(
+    async (panel) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api || !api.panels) return;
+      setActive(panel.id);
+      setRendering(true);
+      setHtml('');
+      const res = await api.panels.render(panel.id, {});
+      setRendering(false);
+      if (res.ok) {
+        setHtml(res.panel.html || '');
+      } else if (onNotify) {
+        setActive(null);
+        onNotify(`渲染失败: ${res.error}`);
+      }
+    },
+    [onNotify],
+  );
+
+  return (
+    <section className="panel-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>插件面板</h3>
+        <button className="btn ghost" onClick={refresh} disabled={loading}>
+          {loading ? '加载中…' : '刷新'}
+        </button>
+      </div>
+      {panels.length === 0 ? (
+        <p className="empty">{loading ? '加载中…' : '暂无插件面板'}</p>
+      ) : (
+        <>
+          <ul className="command-list">
+            {panels.map((p) => (
+              <li key={p.id} className="command-item">
+                <div className="command-info">
+                  <span className="command-title">{p.title}</span>
+                  <span className="muted">{p.area} · {p.pluginId}</span>
+                </div>
+                <button className="btn primary" type="button" disabled={rendering} onClick={() => open(p)}>
+                  {rendering && active === p.id ? '渲染中…' : '打开'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {active && (
+            <div className="plugin-view">
+              <div className="plugin-view-title">{panels.find((p) => p.id === active)?.title}</div>
+              <div className="plugin-view-body" dangerouslySetInnerHTML={{ __html: html }} />
+            </div>
+          )}
+        </>
+      )}
+    </section>
+  );
+}
+
+function EditorPanel(props) {
+  const { onNotify } = props;
+  const [editors, setEditors] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [active, setActive] = useState(null);
+  const [html, setHtml] = useState('');
+  const [rendering, setRendering] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const api = window.loAgent && window.loAgent.plugins;
+    if (!api || !api.editors) {
+      if (onNotify) onNotify('插件系统未就绪');
+      setLoading(false);
+      return;
+    }
+    const res = await api.editors.list();
+    setLoading(false);
+    if (res.ok) setEditors(res.editors || []);
+    else if (onNotify) onNotify(`获取编辑器失败: ${res.error}`);
+  }, [onNotify]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const open = useCallback(
+    async (editor) => {
+      const api = window.loAgent && window.loAgent.plugins;
+      if (!api || !api.editors) return;
+      setActive(editor.id);
+      setRendering(true);
+      setHtml('');
+      const res = await api.editors.render(editor.id, {});
+      setRendering(false);
+      if (res.ok) {
+        setHtml(res.editor.html || '');
+      } else if (onNotify) {
+        setActive(null);
+        onNotify(`渲染失败: ${res.error}`);
+      }
+    },
+    [onNotify],
+  );
+
+  return (
+    <section className="panel-card">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h3 style={{ margin: 0, fontSize: 14 }}>插件编辑器</h3>
+        <button className="btn ghost" onClick={refresh} disabled={loading}>
+          {loading ? '加载中…' : '刷新'}
+        </button>
+      </div>
+      {editors.length === 0 ? (
+        <p className="empty">{loading ? '加载中…' : '暂无插件编辑器'}</p>
+      ) : (
+        <>
+          <ul className="command-list">
+            {editors.map((e) => (
+              <li key={e.id} className="command-item">
+                <div className="command-info">
+                  <span className="command-title">{e.title}</span>
+                  <span className="muted">{e.resourceType} · {e.pluginId}</span>
+                </div>
+                <button className="btn primary" type="button" disabled={rendering} onClick={() => open(e)}>
+                  {rendering && active === e.id ? '渲染中…' : '打开'}
+                </button>
+              </li>
+            ))}
+          </ul>
+          {active && (
+            <div className="plugin-view">
+              <div className="plugin-view-title">{editors.find((e) => e.id === active)?.title}</div>
               <div className="plugin-view-body" dangerouslySetInnerHTML={{ __html: html }} />
             </div>
           )}

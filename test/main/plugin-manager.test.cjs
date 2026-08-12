@@ -392,6 +392,60 @@ describe('PluginManager', () => {
     expect(pm.getService('svc-provider.health')).toBeNull();
   });
 
+  it('面板/编辑器：registerPanel/registerEditor 注册，renderPanel/renderEditor 渲染，disable 清理', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-pe', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-pe', name: 'Demo PE', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          ctx.extensions.registerPanel({
+            id: 'demo-pe.side',
+            title: '侧栏',
+            area: 'sidebar',
+            render: async (context, cmdCtx) => '<div class="panel">' + cmdCtx.pluginId + '</div>',
+          });
+          ctx.extensions.registerEditor({
+            id: 'demo-pe.note',
+            title: '笔记编辑器',
+            resourceType: 'note',
+            render: async (context, cmdCtx) => '<div class="editor">' + (context.rid || '') + '</div>',
+          });
+        }
+      }
+      module.exports = P;
+    `);
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.activate('demo-pe');
+
+    const panel = reg.getPanel('demo-pe.side');
+    expect(panel).toMatchObject({ id: 'demo-pe.side', pluginId: 'demo-pe', area: 'sidebar' });
+    const editor = reg.getEditor('demo-pe.note');
+    expect(editor).toMatchObject({ id: 'demo-pe.note', pluginId: 'demo-pe', resourceType: 'note' });
+
+    const res = await pm.renderPanel('demo-pe.side', {});
+    expect(res).toMatchObject({ pluginId: 'demo-pe', panelId: 'demo-pe.side', title: '侧栏', area: 'sidebar' });
+    expect(res.html).toContain('demo-pe');
+
+    const res2 = await pm.renderEditor('demo-pe.note', { rid: 'res_9' });
+    expect(res2).toMatchObject({ pluginId: 'demo-pe', editorId: 'demo-pe.note', title: '笔记编辑器', resourceType: 'note' });
+    expect(res2.html).toContain('res_9');
+
+    // 未激活时渲染报错
+    await pm.disable('demo-pe');
+    expect(reg.getPanel('demo-pe.side')).toBeNull();
+    expect(reg.getEditor('demo-pe.note')).toBeNull();
+    await expect(pm.renderPanel('demo-pe.side', {})).rejects.toThrow(/面板不存在/);
+    await expect(pm.renderEditor('demo-pe.note', {})).rejects.toThrow(/编辑器不存在/);
+  });
+
   it('端到端：真实 demo 插件（plugins-demo）跨插件服务消费', async () => {
     const pluginsDemoDir = path.join(__dirname, '..', '..', 'plugins-demo');
     const reg = new ExtensionRegistry();
@@ -418,6 +472,15 @@ describe('PluginManager', () => {
     });
     expect(reg.listServices()).toHaveLength(1);
     expect(reg.listServices()[0].id).toBe('demo-hello.status-service');
+
+    // 真实 demo-hello 同时注册了视图/面板/编辑器（contributes 数据 + 运行时 render）
+    expect(reg.getPanel('demo-hello.side')).toMatchObject({ id: 'demo-hello.side', pluginId: 'demo-hello', area: 'sidebar' });
+    expect(reg.getEditor('demo-hello.editor')).toMatchObject({ id: 'demo-hello.editor', pluginId: 'demo-hello', resourceType: 'note' });
+
+    const panelRes = await pm.renderPanel('demo-hello.side', {});
+    expect(panelRes.html).toContain('侧栏面板');
+    const editorRes = await pm.renderEditor('demo-hello.editor', { rid: 'res_e2e' });
+    expect(editorRes.html).toContain('res_e2e');
 
     // 命令面板实时消费同样拿到状态
     const res = await pm.executeCommand('demo-consumer.consume', []);

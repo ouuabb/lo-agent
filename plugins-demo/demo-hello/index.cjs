@@ -84,6 +84,26 @@ class DemoHelloPlugin extends AgentPlugin {
       },
     ]);
 
+    // 注册可渲染面板（侧边栏/底部面板挂载层）
+    ctx.extensions.registerPanel({
+      id: 'demo-hello.side',
+      title: 'Demo: 侧栏',
+      area: 'sidebar',
+      render: async (context, cmdCtx) =>
+        `<div style="font-size:13px"><p><strong>${cmdCtx.config('greeting', greeting)}</strong></p>
+         <p class="muted">侧栏面板 · 状态: ${status ? '可用' : '不可用'}</p></div>`,
+    });
+
+    // 注册可渲染编辑器（资源类型编辑 UI）
+    ctx.extensions.registerEditor({
+      id: 'demo-hello.editor',
+      title: 'Demo: 笔记编辑器',
+      resourceType: 'note',
+      render: async (context, cmdCtx) =>
+        `<div style="font-size:13px;padding:8px;border:1px dashed #ccc"><p><strong>${context.rid || '新笔记'}</strong></p>
+         <p class="muted">编辑器快照（${cmdCtx.config('greeting', greeting)}）</p></div>`,
+    });
+
     // 注册插件服务（供其他插件经 ctx.extensions.getService 消费）
     ctx.extensions.registerService([
       {

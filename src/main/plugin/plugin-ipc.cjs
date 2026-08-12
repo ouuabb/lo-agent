@@ -14,6 +14,10 @@ const CHANNELS = {
   EXECUTE_COMMAND: 'agent-plugins:execute-command',
   LIST_VIEWS: 'agent-plugins:list-views',
   RENDER_VIEW: 'agent-plugins:render-view',
+  LIST_PANELS: 'agent-plugins:list-panels',
+  RENDER_PANEL: 'agent-plugins:render-panel',
+  LIST_EDITORS: 'agent-plugins:list-editors',
+  RENDER_EDITOR: 'agent-plugins:render-editor',
   INSTALL: 'agent-plugins:install',
   LIST_PLUGINS: 'agent-plugins:list-plugins',
   ENABLE: 'agent-plugins:enable',
@@ -63,6 +67,46 @@ function registerPluginIpc(ipcMain, pluginManager) {
       if (!pluginManager) throw new Error('插件系统未初始化');
       const result = await pluginManager.renderView(viewId, context || {});
       return { ok: true, view: result };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 列出已注册面板（供面板区挂载：id / title / area / pluginId）
+  ipcMain.handle(CHANNELS.LIST_PANELS, () => {
+    if (!pluginManager || !pluginManager.extensionRegistry) return { ok: true, panels: [] };
+    const panels = pluginManager.extensionRegistry
+      .listPanels()
+      .map((p) => ({ id: p.id, title: p.title, area: p.area, pluginId: p.pluginId }));
+    return { ok: true, panels };
+  });
+
+  // 渲染面板 → HTML
+  ipcMain.handle(CHANNELS.RENDER_PANEL, async (_event, panelId, context) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const result = await pluginManager.renderPanel(panelId, context || {});
+      return { ok: true, panel: result };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 列出已注册编辑器（供资源类型编辑挂载：id / title / resourceType / pluginId）
+  ipcMain.handle(CHANNELS.LIST_EDITORS, () => {
+    if (!pluginManager || !pluginManager.extensionRegistry) return { ok: true, editors: [] };
+    const editors = pluginManager.extensionRegistry
+      .listEditors()
+      .map((e) => ({ id: e.id, title: e.title, resourceType: e.resourceType, pluginId: e.pluginId }));
+    return { ok: true, editors };
+  });
+
+  // 渲染编辑器 → HTML
+  ipcMain.handle(CHANNELS.RENDER_EDITOR, async (_event, editorId, context) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const result = await pluginManager.renderEditor(editorId, context || {});
+      return { ok: true, editor: result };
     } catch (e) {
       return { ok: false, error: e.message };
     }

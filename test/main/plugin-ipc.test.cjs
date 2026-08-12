@@ -1,17 +1,21 @@
 const { registerPluginIpc, CHANNELS } = require('../../src/main/plugin/plugin-ipc.cjs');
 
-function makeRegistry(commands, views = []) {
+function makeRegistry(commands, views = [], panels = [], editors = []) {
   return {
     listCommands: jest.fn(() => commands),
     listViews: jest.fn(() => views),
+    listPanels: jest.fn(() => panels),
+    listEditors: jest.fn(() => editors),
   };
 }
 
-function makePluginManager(commands = [], views = []) {
+function makePluginManager(commands = [], views = [], panels = [], editors = []) {
   const pm = {
-    extensionRegistry: makeRegistry(commands, views),
+    extensionRegistry: makeRegistry(commands, views, panels, editors),
     executeCommand: jest.fn(),
     renderView: jest.fn(),
+    renderPanel: jest.fn(),
+    renderEditor: jest.fn(),
     listForUi: jest.fn(() => []),
     enable: jest.fn(async () => ({})),
     disable: jest.fn(async () => ({})),
@@ -30,6 +34,20 @@ function makePluginManager(commands = [], views = []) {
     title: 'View',
     type: 'panel',
     html: '<p>hi</p>',
+  }));
+  pm.renderPanel.mockImplementation(async (panelId) => ({
+    pluginId: 'demo',
+    panelId,
+    title: 'Panel',
+    area: 'sidebar',
+    html: '<p>panel</p>',
+  }));
+  pm.renderEditor.mockImplementation(async (editorId) => ({
+    pluginId: 'demo',
+    editorId,
+    title: 'Editor',
+    resourceType: 'note',
+    html: '<p>editor</p>',
   }));
   return pm;
 }
@@ -159,6 +177,102 @@ describe('registerPluginIpc', () => {
     const res = await handler({}, 'nope', {});
     expect(res.ok).toBe(false);
     expect(res.error).toBe('视图不存在: nope');
+  });
+
+  it('LIST_PANELS 返回面板清单（id/title/area/pluginId，无 render）', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager([], [], [
+      { id: 'demo.side', title: '侧栏', area: 'sidebar', pluginId: 'demo', render: () => {} },
+    ]);
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_PANELS)[1];
+
+    const res = await handler();
+    expect(res.ok).toBe(true);
+    expect(res.panels).toEqual([
+      { id: 'demo.side', title: '侧栏', area: 'sidebar', pluginId: 'demo' },
+    ]);
+    expect(res.panels.every((p) => typeof p.render === 'undefined')).toBe(true);
+  });
+
+  it('无插件系统时 LIST_PANELS 返回空清单', async () => {
+    const ipcMain = { handle: jest.fn() };
+    registerPluginIpc(ipcMain, null);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_PANELS)[1];
+    const res = await handler();
+    expect(res).toEqual({ ok: true, panels: [] });
+  });
+
+  it('RENDER_PANEL 委托 pluginManager.renderPanel 并返回 HTML', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.RENDER_PANEL)[1];
+
+    const res = await handler({}, 'demo.side', {});
+    expect(pm.renderPanel).toHaveBeenCalledWith('demo.side', {});
+    expect(res.ok).toBe(true);
+    expect(res.panel).toEqual({ pluginId: 'demo', panelId: 'demo.side', title: 'Panel', area: 'sidebar', html: '<p>panel</p>' });
+  });
+
+  it('RENDER_PANEL 面板不存在时返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.renderPanel.mockRejectedValue(new Error('面板不存在: nope'));
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.RENDER_PANEL)[1];
+
+    const res = await handler({}, 'nope', {});
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('面板不存在: nope');
+  });
+
+  it('LIST_EDITORS 返回编辑器清单（id/title/resourceType/pluginId，无 render）', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager([], [], [], [
+      { id: 'demo.note', title: '笔记', resourceType: 'note', pluginId: 'demo', render: () => {} },
+    ]);
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_EDITORS)[1];
+
+    const res = await handler();
+    expect(res.ok).toBe(true);
+    expect(res.editors).toEqual([
+      { id: 'demo.note', title: '笔记', resourceType: 'note', pluginId: 'demo' },
+    ]);
+    expect(res.editors.every((e) => typeof e.render === 'undefined')).toBe(true);
+  });
+
+  it('无插件系统时 LIST_EDITORS 返回空清单', async () => {
+    const ipcMain = { handle: jest.fn() };
+    registerPluginIpc(ipcMain, null);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_EDITORS)[1];
+    const res = await handler();
+    expect(res).toEqual({ ok: true, editors: [] });
+  });
+
+  it('RENDER_EDITOR 委托 pluginManager.renderEditor 并返回 HTML', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.RENDER_EDITOR)[1];
+
+    const res = await handler({}, 'demo.note', { rid: 'r1' });
+    expect(pm.renderEditor).toHaveBeenCalledWith('demo.note', { rid: 'r1' });
+    expect(res.ok).toBe(true);
+    expect(res.editor).toEqual({ pluginId: 'demo', editorId: 'demo.note', title: 'Editor', resourceType: 'note', html: '<p>editor</p>' });
+  });
+
+  it('RENDER_EDITOR 编辑器不存在时返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.renderEditor.mockRejectedValue(new Error('编辑器不存在: nope'));
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.RENDER_EDITOR)[1];
+
+    const res = await handler({}, 'nope', {});
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('编辑器不存在: nope');
   });
 
   it('INSTALL 委托 pluginManager.install', async () => {

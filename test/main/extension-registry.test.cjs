@@ -182,4 +182,74 @@ describe('ExtensionRegistry', () => {
     expect(reg.listServices()).toHaveLength(0);
     expect(reg.count()).toBe(0);
   });
+
+  it('registerPanels 注册面板（含 render，area 默认 sidebar）', () => {
+    const reg = new ExtensionRegistry();
+    const render = jest.fn(() => '<p>panel</p>');
+    const registered = reg.registerPanels('demo', [
+      { id: 'demo.side', title: '侧栏', render },
+      { id: 'demo.bottom', title: '底部', area: 'bottom', render },
+      { id: 'demo.bad', render: 'not-fn' }, // 缺 render → 跳过
+    ]);
+    expect(registered).toHaveLength(2);
+
+    const panel = reg.getPanel('demo.side');
+    expect(panel).toMatchObject({ id: 'demo.side', pluginId: 'demo', title: '侧栏', area: 'sidebar' });
+    expect(typeof panel.render).toBe('function');
+    expect(reg.getPanel('demo.bottom')).toMatchObject({ area: 'bottom' });
+    expect(reg.getPanel('demo.bad')).toBeNull();
+    expect(reg.listPanels()).toHaveLength(2);
+  });
+
+  it('registerPanels 重复 ID 跳过', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerPanels('a', [{ id: 'dup', render: () => 1 }]);
+    const reg2 = reg.registerPanels('b', [{ id: 'dup', render: () => 2 }]);
+    expect(reg2).toHaveLength(0);
+    expect(reg.getPanel('dup').pluginId).toBe('a');
+  });
+
+  it('registerEditors 注册编辑器（含 render，resourceType 默认 note）', () => {
+    const reg = new ExtensionRegistry();
+    const render = jest.fn(() => '<p>editor</p>');
+    const registered = reg.registerEditors('demo', [
+      { id: 'demo.note', title: '笔记', render },
+      { id: 'demo.epub', title: 'EPUB', resourceType: 'epub', render },
+      { id: 'demo.bad', render: 'not-fn' }, // 缺 render → 跳过
+    ]);
+    expect(registered).toHaveLength(2);
+
+    const editor = reg.getEditor('demo.note');
+    expect(editor).toMatchObject({ id: 'demo.note', pluginId: 'demo', title: '笔记', resourceType: 'note' });
+    expect(typeof editor.render).toBe('function');
+    expect(reg.getEditor('demo.epub')).toMatchObject({ resourceType: 'epub' });
+    expect(reg.getEditor('demo.bad')).toBeNull();
+    expect(reg.listEditors()).toHaveLength(2);
+  });
+
+  it('registerEditors 重复 ID 跳过', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerEditors('a', [{ id: 'dup', render: () => 1 }]);
+    const reg2 = reg.registerEditors('b', [{ id: 'dup', render: () => 2 }]);
+    expect(reg2).toHaveLength(0);
+    expect(reg.getEditor('dup').pluginId).toBe('a');
+  });
+
+  it('unregisterByPlugin 同时清理面板/编辑器，clear 清空', () => {
+    const reg = new ExtensionRegistry();
+    reg.registerPanels('a', [{ id: 'a.panel', render: () => 1 }]);
+    reg.registerPanels('b', [{ id: 'b.panel', render: () => 2 }]);
+    reg.registerEditors('a', [{ id: 'a.editor', render: () => 1 }]);
+    reg.registerEditors('b', [{ id: 'b.editor', render: () => 2 }]);
+    reg.unregisterByPlugin('a');
+    expect(reg.getPanel('a.panel')).toBeNull();
+    expect(reg.getPanel('b.panel')).not.toBeNull();
+    expect(reg.getEditor('a.editor')).toBeNull();
+    expect(reg.getEditor('b.editor')).not.toBeNull();
+    expect(reg.count()).toBe(2);
+    reg.clear();
+    expect(reg.listPanels()).toHaveLength(0);
+    expect(reg.listEditors()).toHaveLength(0);
+    expect(reg.count()).toBe(0);
+  });
 });

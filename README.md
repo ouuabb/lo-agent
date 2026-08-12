@@ -108,6 +108,8 @@ lo-agent 作为插件 Host，加载 `{userData}/plugins/<plugin-id>/` 下的客�
   宿主经 `PluginManager.executeCommand(id, args)` 调用；命令面板经白名单 IPC 展示/执行
 - **视图挂载**：插件经 `ctx.extensions.registerView([...])` 注册 `render`（返回 HTML 字符串），
   `PluginManager.renderView` 交付渲染进程挂载（`dangerouslySetInnerHTML`）
+- **面板/编辑器**：`ctx.extensions.registerPanel` / `registerEditor` 注册（area: sidebar/bottom；
+  resourceType 绑定资源类型），`PluginManager.renderPanel` / `renderEditor` 同构交付渲染进程
 - **插件服务**：插件经 `ctx.extensions.registerServices([...])` 注册服务（含 api，如状态服务），
   其他插件经 `ctx.extensions.getService(id)` / `listServices()` 消费（插件间通信）；
   提供者停用/禁用时服务从注册表清理

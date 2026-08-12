@@ -25,6 +25,10 @@ const CHANNEL = {
   PLUGINS_EXECUTE: 'agent-plugins:execute-command',
   PLUGINS_VIEWS: 'agent-plugins:list-views',
   PLUGINS_RENDER_VIEW: 'agent-plugins:render-view',
+  PLUGINS_PANELS: 'agent-plugins:list-panels',
+  PLUGINS_RENDER_PANEL: 'agent-plugins:render-panel',
+  PLUGINS_EDITORS: 'agent-plugins:list-editors',
+  PLUGINS_RENDER_EDITOR: 'agent-plugins:render-editor',
   PLUGINS_INSTALL: 'agent-plugins:install',
   PLUGINS_MANAGE_LIST: 'agent-plugins:list-plugins',
   PLUGINS_MANAGE_ENABLE: 'agent-plugins:enable',
@@ -75,6 +79,16 @@ contextBridge.exposeInMainWorld('loAgent', {
       list: () => ipcRenderer.invoke(CHANNEL.PLUGINS_VIEWS),
       render: (viewId, context) =>
         ipcRenderer.invoke(CHANNEL.PLUGINS_RENDER_VIEW, viewId, context),
+    },
+    panels: {
+      list: () => ipcRenderer.invoke(CHANNEL.PLUGINS_PANELS),
+      render: (panelId, context) =>
+        ipcRenderer.invoke(CHANNEL.PLUGINS_RENDER_PANEL, panelId, context),
+    },
+    editors: {
+      list: () => ipcRenderer.invoke(CHANNEL.PLUGINS_EDITORS),
+      render: (editorId, context) =>
+        ipcRenderer.invoke(CHANNEL.PLUGINS_RENDER_EDITOR, editorId, context),
     },
     install: (id, registryUrl, options) =>
       ipcRenderer.invoke(CHANNEL.PLUGINS_INSTALL, id, registryUrl, options),

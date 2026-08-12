@@ -28,6 +28,9 @@
     "panels": [
       { "id": "demo-hello.side", "title": "Demo: 侧栏" }
     ],
+    "editors": [
+      { "id": "demo-hello.editor", "title": "Demo: 笔记编辑器", "resourceType": "note" }
+    ],
     "services": [
       { "id": "demo-hello.status-service", "title": "Demo: 状态服务" }
     ]

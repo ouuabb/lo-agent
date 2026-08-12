@@ -235,6 +235,8 @@ class PluginManager {
       extensionsImpl: {
         registerCommands: (defs) => this._registerCommands(entry.id, defs),
         registerView: (defs) => this._registerViews(entry.id, defs),
+        registerPanel: (def) => this._registerPanels(entry.id, def ? [def] : []),
+        registerEditor: (def) => this._registerEditors(entry.id, def ? [def] : []),
         registerService: (defs) => this._registerServices(entry.id, defs),
         getService: (id) => this.getService(id),
         listServices: () => this.listServices(),
@@ -400,6 +402,76 @@ class PluginManager {
       throw new Error(`[plugin] 服务注册失败：extensionRegistry 未注入 (${pluginId})`);
     }
     return this.extensionRegistry.registerServices(pluginId, defs);
+  }
+
+  /**
+   * 将插件的面板注册到 ExtensionRegistry（供渲染进程按 area 挂载）
+   * @param {string} pluginId
+   * @param {Array} defs — [{ id, title?, area?, render }]
+   */
+  _registerPanels(pluginId, defs) {
+    if (!this.extensionRegistry) {
+      throw new Error(`[plugin] 面板注册失败：extensionRegistry 未注入 (${pluginId})`);
+    }
+    return this.extensionRegistry.registerPanels(pluginId, defs);
+  }
+
+  /**
+   * 将插件的编辑器注册到 ExtensionRegistry（供渲染进程按 resourceType 挂载）
+   * @param {string} pluginId
+   * @param {Array} defs — [{ id, title?, resourceType?, render }]
+   */
+  _registerEditors(pluginId, defs) {
+    if (!this.extensionRegistry) {
+      throw new Error(`[plugin] 编辑器注册失败：extensionRegistry 未注入 (${pluginId})`);
+    }
+    return this.extensionRegistry.registerEditors(pluginId, defs);
+  }
+
+  /** 渲染插件面板（同视图渲染快照模型：render 返回 HTML，经 IPC 交付渲染进程） */
+  async renderPanel(panelId, context = {}) {
+    if (!this.extensionRegistry) {
+      throw new Error('extensionRegistry 未注入，无法渲染面板');
+    }
+    const panel = this.extensionRegistry.getPanel(panelId);
+    if (!panel) {
+      throw new Error(`面板不存在: ${panelId}`);
+    }
+    const entry = this._registry.get(panel.pluginId);
+    if (!entry) {
+      throw new Error(`插件未加载: ${panel.pluginId}`);
+    }
+    if (entry.state !== 'activated') {
+      throw new Error(`插件未激活: ${panel.pluginId}`);
+    }
+    const html = await panel.render(context || {}, entry.plugin.context);
+    return { pluginId: panel.pluginId, panelId, title: panel.title, area: panel.area, html };
+  }
+
+  /** 渲染插件编辑器（同视图渲染快照模型：render 返回 HTML，经 IPC 交付渲染进程） */
+  async renderEditor(editorId, context = {}) {
+    if (!this.extensionRegistry) {
+      throw new Error('extensionRegistry 未注入，无法渲染编辑器');
+    }
+    const editor = this.extensionRegistry.getEditor(editorId);
+    if (!editor) {
+      throw new Error(`编辑器不存在: ${editorId}`);
+    }
+    const entry = this._registry.get(editor.pluginId);
+    if (!entry) {
+      throw new Error(`插件未加载: ${editor.pluginId}`);
+    }
+    if (entry.state !== 'activated') {
+      throw new Error(`插件未激活: ${editor.pluginId}`);
+    }
+    const html = await editor.render(context || {}, entry.plugin.context);
+    return {
+      pluginId: editor.pluginId,
+      editorId,
+      title: editor.title,
+      resourceType: editor.resourceType,
+      html,
+    };
   }
 
   /**
