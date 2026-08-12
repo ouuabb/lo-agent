@@ -14,6 +14,7 @@
 const { PluginLoader } = require('./plugin-loader.cjs');
 const { createLoImpl } = require('./lo-adapter.cjs');
 const { PluginInstaller } = require('./plugin-installer.cjs');
+const { resolveActivationOrder } = require('./activation-order.cjs');
 const {
   fromHost,
   AgentPluginContext,
@@ -82,9 +83,19 @@ class PluginManager {
     }
   }
 
-  /** 激活全部已加载插件 */
+  /**
+   * 激活全部已加载插件（按 manifest.dependsOn 依赖拓扑排序：提供者先激活）
+   */
   async activateAll() {
-    for (const id of this._registry.keys()) {
+    const entries = Array.from(this._registry.values()).map((e) => ({
+      id: e.id,
+      manifest: e.manifest,
+    }));
+    const { ordered, cycles } = resolveActivationOrder(entries);
+    for (const id of cycles) {
+      console.warn(`[plugin] 依赖循环或缺失，按原顺序激活: ${id}`);
+    }
+    for (const id of ordered) {
       try {
         await this.activate(id);
       } catch (e) {
@@ -168,6 +179,7 @@ class PluginManager {
         author: m.author || '',
         state: e.state,
         enabled: !!e.enabled,
+        dependsOn: m.dependsOn || [],
         permissions: m.permissions || {},
         contributes: m.contributes || {},
         config: m.config || {},

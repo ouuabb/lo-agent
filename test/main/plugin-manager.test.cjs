@@ -405,9 +405,9 @@ describe('PluginManager', () => {
     const ids = pm.list().map((x) => x.id).sort();
     expect(ids).toEqual(['demo-consumer', 'demo-hello']);
 
-    // 提供者先激活（状态服务注册），消费者后激活
-    await pm.activate('demo-hello');
-    await pm.activate('demo-consumer');
+    // 依赖拓扑激活：demo-consumer dependsOn demo-hello → 提供者先激活，
+    // 即使加载序是字母序（consumer 在前）也能拿到服务
+    await pm.activateAll();
 
     // 消费者激活期已取到提供者 api 并调用成功
     const consumer = pm.get('demo-consumer');
@@ -780,6 +780,7 @@ describe('PluginManager', () => {
         main: 'index.cjs',
         description: 'UI 演示插件',
         author: 'lo',
+        dependsOn: ['demo-base'],
         permissions: { lo: ['health.read'] },
         contributes: { commands: [{ id: 'demo-ui.open', title: '打开' }] },
         config: { title: { type: 'string', default: '你好' } },
@@ -803,6 +804,7 @@ describe('PluginManager', () => {
       author: 'lo',
       state: 'loaded',
       enabled: false,
+      dependsOn: ['demo-base'],
       permissions: { lo: ['health.read'] },
       contributes: { commands: [{ id: 'demo-ui.open', title: '打开' }] },
       config: { title: { type: 'string', default: '你好' } },
