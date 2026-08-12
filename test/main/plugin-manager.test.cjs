@@ -392,6 +392,45 @@ describe('PluginManager', () => {
     expect(pm.getService('svc-provider.health')).toBeNull();
   });
 
+  it('端到端：真实 demo 插件（plugins-demo）跨插件服务消费', async () => {
+    const pluginsDemoDir = path.join(__dirname, '..', '..', 'plugins-demo');
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: pluginsDemoDir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    const ids = pm.list().map((x) => x.id).sort();
+    expect(ids).toEqual(['demo-consumer', 'demo-hello']);
+
+    // 提供者先激活（状态服务注册），消费者后激活
+    await pm.activate('demo-hello');
+    await pm.activate('demo-consumer');
+
+    // 消费者激活期已取到提供者 api 并调用成功
+    const consumer = pm.get('demo-consumer');
+    expect(consumer.result).toEqual({
+      available: true,
+      greeting: 'Hello from demo plugin',
+      status: { totalResources: 3, totalRelations: 1 },
+    });
+    expect(reg.listServices()).toHaveLength(1);
+    expect(reg.listServices()[0].id).toBe('demo-hello.status-service');
+
+    // 命令面板实时消费同样拿到状态
+    const res = await pm.executeCommand('demo-consumer.consume', []);
+    expect(res.result.available).toBe(true);
+    expect(res.result.status).toEqual({ totalResources: 3, totalRelations: 1 });
+
+    // 停用提供者 → 服务被清理，消费者 getService 降级为不可用（不崩溃）
+    await pm.disable('demo-hello');
+    expect(reg.listServices()).toHaveLength(0);
+    const res2 = await pm.executeCommand('demo-consumer.consume', []);
+    expect(res2.result).toEqual({ available: false, reason: '服务不可用: demo-hello.status-service' });
+  });
+
   it('权限模型：未声明写权限的插件调用 ctx.lo 写操作被拒', async () => {
     const dir = makePluginsDir();
     writePlugin(dir, 'demo-readonly', `
