@@ -90,6 +90,18 @@ class PluginLoader {
       throw new Error(`插件入口不存在: ${mainFile}`);
     }
 
+    // 渲染端入口（mountEl UI）：若声明 ui，校验文件存在且不越出插件目录
+    if (manifest.ui) {
+      const uiTarget = path.resolve(pluginDir, manifest.ui);
+      const base = path.resolve(pluginDir);
+      if (!uiTarget.startsWith(base + path.sep)) {
+        throw new Error(`ui 路径越界: ${manifest.ui}`);
+      }
+      if (!fs.existsSync(uiTarget)) {
+        throw new Error(`ui 入口不存在: ${manifest.ui}`);
+      }
+    }
+
     // 清除模块缓存（重载时）
     try {
       delete require.cache[require.resolve(mainPath)];

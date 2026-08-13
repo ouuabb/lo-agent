@@ -446,13 +446,129 @@ describe('PluginManager', () => {
     await expect(pm.renderEditor('demo-pe.note', {})).rejects.toThrow(/编辑器不存在/);
   });
 
+  it('渲染端 UI：getUiModule 读 ui 源码 + worldId 分配 + invokePluginUiCtx 代理 ctx', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'demo-um', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'demo-um', name: 'Demo Um', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          this._r = await ctx.lo.health.stats();
+          ctx.extensions.registerCommands([
+            { id: 'demo-um.ping', title: 'Ping', handler: async () => 'pong' },
+          ]);
+        }
+      }
+      module.exports = P;
+    `);
+    const pDir = path.join(dir, 'demo-um');
+    fs.writeFileSync(
+      path.join(pDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'demo-um', name: 'Demo Um', version: '0.1.0', main: 'index.cjs', ui: 'ui/index.mjs',
+      }),
+    );
+    fs.mkdirSync(path.join(pDir, 'ui'), { recursive: true });
+    fs.writeFileSync(
+      path.join(pDir, 'ui', 'index.mjs'),
+      `export const views = { 'demo-um.v': { render: (el, ctx) => () => {} } };\n`,
+    );
+
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.activate('demo-um');
+
+    // getUiModule：源码 + worldId（1000+），worldId 稳定复用
+    const ui = pm.getUiModule('demo-um');
+    expect(ui.source).toContain('render');
+    const w1 = ui.worldId;
+    expect(w1).toBeGreaterThanOrEqual(1000);
+    expect(pm.getUiModule('demo-um').worldId).toBe(w1);
+
+    // invokePluginUiCtx：ctx.lo.health.stats（默认读权限放行）
+    const stats = await pm.invokePluginUiCtx({
+      pluginId: 'demo-um', target: 'lo', ns: 'health', method: 'stats',
+    });
+    expect(stats).toEqual({ totalResources: 3, totalRelations: 1 });
+
+    // 未声明写权限 → ctx.lo.operations.execute 被 facade 拒绝
+    await expect(
+      pm.invokePluginUiCtx({
+        pluginId: 'demo-um', target: 'lo', ns: 'operations', method: 'execute', args: ['resource.update', {}],
+      }),
+    ).rejects.toThrow(/被拒绝/);
+
+    // config 代理
+    expect(await pm.invokePluginUiCtx({ pluginId: 'demo-um', target: 'config', method: 'config', args: [] })).toEqual({});
+
+    // executeCommand 代理
+    const exec = await pm.invokePluginUiCtx({
+      pluginId: 'demo-um', target: 'executeCommand', method: 'execute', args: ['demo-um.ping', []],
+    });
+    expect(exec.result).toBe('pong');
+
+    // 非法 target / 非法命名空间
+    await expect(pm.invokePluginUiCtx({ pluginId: 'demo-um', target: 'bogus', method: 'x' })).rejects.toThrow(/未知 ctx target/);
+    await expect(pm.invokePluginUiCtx({ pluginId: 'demo-um', target: 'lo', ns: 'bogus', method: 'x' })).rejects.toThrow(/未知 lo 命名空间/);
+
+    // 禁用 → 未激活拒绝 + worldId 释放（重新分配）
+    await pm.disable('demo-um');
+    await expect(pm.invokePluginUiCtx({ pluginId: 'demo-um', target: 'lo', ns: 'health', method: 'stats' })).rejects.toThrow(/未激活/);
+    expect(pm.getUiWorldId('demo-um')).not.toBe(w1);
+  });
+
+  it('渲染端 UI：未声明 ui / ui 路径越界被拒', async () => {
+    const dir = makePluginsDir();
+    writePlugin(dir, 'no-ui', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'no-ui', name: 'No UI', version: '0.1.0', main: 'index.cjs' }; }
+        activate() {}
+      }
+      module.exports = P;
+    `);
+    // 越界 ui：loader 应拒绝加载该插件
+    const escDir = path.join(dir, 'escape');
+    fs.mkdirSync(escDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(escDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'escape', name: 'Escape', version: '0.1.0', main: 'index.cjs', ui: '../escape.mjs',
+      }),
+    );
+    fs.writeFileSync(
+      path.join(escDir, 'index.cjs'),
+      `const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin { manifest() { return { id: 'escape', name: 'Escape', version: '0.1.0', main: 'index.cjs' }; } activate() {} }
+      module.exports = P;`,
+    );
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+    });
+    await pm.initialize();
+    // 越界插件被跳过
+    expect(pm.get('escape')).toBeNull();
+    // 未声明 ui 的插件 getUiModule 报错
+    await pm.activate('no-ui');
+    expect(() => pm.getUiModule('no-ui')).toThrow(/未声明 ui/);
+  });
+
   it('端到端：真实 demo 插件（plugins-demo）跨插件服务消费', async () => {
     const pluginsDemoDir = path.join(__dirname, '..', '..', 'plugins-demo');
     const reg = new ExtensionRegistry();
+    const loCore = makeLoCore();
     const pm = new PluginManager({
       pluginsDir: pluginsDemoDir,
       hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
-      loCore: makeLoCore(),
+      loCore,
       extensionRegistry: reg,
     });
     await pm.initialize();
@@ -481,6 +597,22 @@ describe('PluginManager', () => {
     expect(panelRes.html).toContain('侧栏面板');
     const editorRes = await pm.renderEditor('demo-hello.editor', { rid: 'res_e2e' });
     expect(editorRes.html).toContain('res_e2e');
+
+    // mountEl UI：demo-hello 声明 ui → getUiModule 读源码 + worldId；ctx 代理走既有 facade
+    const ui = pm.getUiModule('demo-hello');
+    expect(ui.source).toContain('export const views');
+    expect(ui.worldId).toBeGreaterThanOrEqual(1000);
+    const uiStats = await pm.invokePluginUiCtx({
+      pluginId: 'demo-hello', target: 'lo', ns: 'health', method: 'stats',
+    });
+    expect(uiStats).toEqual({ totalResources: 3, totalRelations: 1 });
+    // demo-hello 声明了 operations.write → ctx.lo.operations.execute 放行
+    loCore.client.operations.execute.mockResolvedValue({ operationId: 'op-ui', result: { ok: true } });
+    const uiExec = await pm.invokePluginUiCtx({
+      pluginId: 'demo-hello', target: 'lo', ns: 'operations', method: 'execute',
+      args: ['resource.update', { rid: 'r1', updates: { name: 'x' } }],
+    });
+    expect(uiExec).toEqual({ operationId: 'op-ui', result: { ok: true } });
 
     // 命令面板实时消费同样拿到状态
     const res = await pm.executeCommand('demo-consumer.consume', []);

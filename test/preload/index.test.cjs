@@ -1,25 +1,37 @@
 jest.mock('electron', () => {
   const mockExposeInMainWorld = jest.fn();
+  const mockExposeInIsolatedWorld = jest.fn();
   const mockInvoke = jest.fn();
   const mockOn = jest.fn();
   const mockRemoveListener = jest.fn();
   return {
-    contextBridge: { exposeInMainWorld: mockExposeInMainWorld },
+    contextBridge: {
+      exposeInMainWorld: mockExposeInMainWorld,
+      exposeInIsolatedWorld: mockExposeInIsolatedWorld,
+    },
     ipcRenderer: { invoke: mockInvoke, on: mockOn, removeListener: mockRemoveListener },
-    __mocks: { mockExposeInMainWorld, mockInvoke, mockOn, mockRemoveListener },
+    webFrame: { executeJavaScriptInIsolatedWorld: jest.fn() },
+    __mocks: {
+      mockExposeInMainWorld,
+      mockExposeInIsolatedWorld,
+      mockInvoke,
+      mockOn,
+      mockRemoveListener,
+    },
   };
 });
 
 describe('src/preload/index.cjs', () => {
   beforeEach(() => {
     jest.resetModules();
+    jest.clearAllMocks();
   });
 
   it('通过 contextBridge 暴露 loAgent API', () => {
     require('../../src/preload/index.cjs');
     const { mockExposeInMainWorld } = require('electron').__mocks;
 
-    expect(mockExposeInMainWorld).toHaveBeenCalledTimes(1);
+    expect(mockExposeInMainWorld).toHaveBeenCalledTimes(2);
     expect(mockExposeInMainWorld.mock.calls[0][0]).toBe('loAgent');
     const api = mockExposeInMainWorld.mock.calls[0][1];
     expect(api).toHaveProperty('version', '0.1.0');
@@ -45,6 +57,9 @@ describe('src/preload/index.cjs', () => {
     expect(api.plugins.views).toBeDefined();
     expect(api.plugins.views.list).toBeDefined();
     expect(api.plugins.views.render).toBeDefined();
+    expect(api.plugins.panels).toBeDefined();
+    expect(api.plugins.editors).toBeDefined();
+    expect(api.plugins.getUi).toBeDefined();
     expect(api.plugins.install).toBeDefined();
     expect(api.plugins.manage).toBeDefined();
     expect(api.plugins.manage.list).toBeDefined();
@@ -53,6 +68,67 @@ describe('src/preload/index.cjs', () => {
     expect(api.plugins.manage.uninstall).toBeDefined();
     expect(api.plugins.manage.getConfig).toBeDefined();
     expect(api.plugins.manage.setConfig).toBeDefined();
+  });
+
+  it('pluginUi 桥暴露 mount/render/dispose（isolated world）', () => {
+    require('../../src/preload/index.cjs');
+    const { mockExposeInMainWorld } = require('electron').__mocks;
+    const pluginUi = mockExposeInMainWorld.mock.calls[1][1];
+    expect(pluginUi.hasWebFrame()).toBe(true);
+    expect(typeof pluginUi.mount).toBe('function');
+    expect(typeof pluginUi.render).toBe('function');
+    expect(typeof pluginUi.dispose).toBe('function');
+  });
+
+  it('pluginUi.mount 注入 ctx 并执行引导；ctx 方法代理到 agent-plugins:ctx', async () => {
+    require('../../src/preload/index.cjs');
+    const { mockExposeInMainWorld, mockExposeInIsolatedWorld, mockInvoke } = require('electron').__mocks;
+    const webFrame = require('electron').webFrame;
+    const pluginUi = mockExposeInMainWorld.mock.calls[1][1];
+
+    mockInvoke.mockResolvedValue({ ok: true, result: { totalResources: 3 } });
+
+    await pluginUi.mount(1004, 'demo', 'export const views = {};', { onNotify: jest.fn() });
+
+    expect(mockExposeInIsolatedWorld).toHaveBeenCalledTimes(2);
+    expect(mockExposeInIsolatedWorld.mock.calls[0][0]).toBe(1004);
+    expect(mockExposeInIsolatedWorld.mock.calls[0][1]).toBe('__loPluginBootstrap');
+    expect(mockExposeInIsolatedWorld.mock.calls[1][1]).toBe('__loPluginCtx');
+    expect(webFrame.executeJavaScriptInIsolatedWorld).toHaveBeenCalledWith(
+      1004,
+      [expect.objectContaining({ code: expect.stringContaining('import(url)') })],
+      true,
+    );
+
+    // ctx 方法（isolated world 中调用）→ agent-plugins:ctx 代理，解包 {ok,result}
+    const ctx = mockExposeInIsolatedWorld.mock.calls[1][2];
+    await ctx.lo.health.stats();
+    expect(mockInvoke).toHaveBeenCalledWith('agent-plugins:ctx', {
+      pluginId: 'demo',
+      target: 'lo',
+      ns: 'health',
+      method: 'stats',
+      args: [],
+    });
+    await ctx.config('greeting');
+    expect(mockInvoke).toHaveBeenLastCalledWith('agent-plugins:ctx', {
+      pluginId: 'demo',
+      target: 'config',
+      method: 'config',
+      args: ['greeting', undefined],
+    });
+    await ctx.executeCommand('demo.hello', ['world']);
+    expect(mockInvoke).toHaveBeenLastCalledWith('agent-plugins:ctx', {
+      pluginId: 'demo',
+      target: 'executeCommand',
+      method: 'execute',
+      args: ['demo.hello', ['world']],
+    });
+    // 解包：返回 result 而非信封
+    expect(await ctx.lo.health.stats()).toEqual({ totalResources: 3 });
+    // 失败：抛错
+    mockInvoke.mockResolvedValue({ ok: false, error: '[lo-facade] 被拒绝' });
+    await expect(ctx.lo.operations.execute('x', {})).rejects.toThrow(/被拒绝/);
   });
 
   it('loCore 方法转发到对应 IPC 通道', () => {

@@ -16,6 +16,8 @@ function makePluginManager(commands = [], views = [], panels = [], editors = [])
     renderView: jest.fn(),
     renderPanel: jest.fn(),
     renderEditor: jest.fn(),
+    getUiModule: jest.fn(),
+    invokePluginUiCtx: jest.fn(),
     listForUi: jest.fn(() => []),
     enable: jest.fn(async () => ({})),
     disable: jest.fn(async () => ({})),
@@ -273,6 +275,84 @@ describe('registerPluginIpc', () => {
     const res = await handler({}, 'nope', {});
     expect(res.ok).toBe(false);
     expect(res.error).toBe('编辑器不存在: nope');
+  });
+
+  it('GET_UI_MODULE 返回渲染端入口源码 + worldId', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.getUiModule.mockReturnValue({ source: 'export const views = {};', worldId: 1004 });
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.GET_UI_MODULE)[1];
+
+    const res = await handler({}, 'demo');
+    expect(pm.getUiModule).toHaveBeenCalledWith('demo');
+    expect(res).toEqual({ ok: true, source: 'export const views = {};', worldId: 1004 });
+  });
+
+  it('GET_UI_MODULE 未声明 ui / 未加载时返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.getUiModule.mockImplementation(() => { throw new Error('插件未声明 ui: demo'); });
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.GET_UI_MODULE)[1];
+
+    const res = await handler({}, 'demo');
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('插件未声明 ui: demo');
+  });
+
+  it('无插件系统时 GET_UI_MODULE 返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    registerPluginIpc(ipcMain, null);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.GET_UI_MODULE)[1];
+    const res = await handler({}, 'demo');
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/未初始化/);
+  });
+
+  it('CTX 委托 pluginManager.invokePluginUiCtx 并返回结果', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.invokePluginUiCtx.mockResolvedValue({ totalResources: 3 });
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.CTX)[1];
+
+    const payload = { pluginId: 'demo', target: 'lo', ns: 'health', method: 'stats', args: [] };
+    const res = await handler({}, payload);
+    expect(pm.invokePluginUiCtx).toHaveBeenCalledWith({
+      pluginId: 'demo', target: 'lo', ns: 'health', method: 'stats', args: [],
+    });
+    expect(res).toEqual({ ok: true, result: { totalResources: 3 } });
+  });
+
+  it('CTX 权限拒绝（facade）时返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    pm.invokePluginUiCtx.mockRejectedValue(new Error('[lo-facade] demo 调用 ctx.lo.operations.execute 被拒绝'));
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.CTX)[1];
+
+    const res = await handler({}, { pluginId: 'demo', target: 'lo', ns: 'operations', method: 'execute', args: [] });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain('被拒绝');
+  });
+
+  it('CTX payload 非法 / 插件系统未初始化时返回错误', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager();
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.CTX)[1];
+
+    const bad = await handler({}, {});
+    expect(bad.ok).toBe(false);
+    expect(bad.error).toMatch(/payload 非法/);
+
+    const ipcMain2 = { handle: jest.fn() };
+    registerPluginIpc(ipcMain2, null);
+    const handler2 = ipcMain2.handle.mock.calls.find(([c]) => c === CHANNELS.CTX)[1];
+    const res = await handler2({}, { pluginId: 'demo', target: 'lo', ns: 'health', method: 'stats' });
+    expect(res.ok).toBe(false);
+    expect(res.error).toMatch(/未初始化/);
   });
 
   it('INSTALL 委托 pluginManager.install', async () => {

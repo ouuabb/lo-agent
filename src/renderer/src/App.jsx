@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import DocViewer from './docs/DocViewer.jsx';
 import NoteEditor from './editor/NoteEditor.jsx';
+import PluginUiMount from './plugin/PluginUiMount.jsx';
+import { hasUi } from './plugin/pluginUi.js';
 import './App.css';
 
 const api = window.loAgent && window.loAgent.loCore;
@@ -1071,6 +1073,7 @@ function ViewPanel(props) {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
   const [html, setHtml] = useState('');
+  const [mountItem, setMountItem] = useState(null);
   const [rendering, setRendering] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -1097,6 +1100,14 @@ function ViewPanel(props) {
       setActive(view.id);
       setRendering(true);
       setHtml('');
+      setMountItem(null);
+      // 优先 mountEl UI（插件声明 ui）；否则回退 HTML 快照
+      const ui = await hasUi(view.pluginId);
+      if (ui) {
+        setMountItem(view);
+        setRendering(false);
+        return;
+      }
       const res = await api.views.render(view.id, {});
       setRendering(false);
       if (res.ok) {
@@ -1134,7 +1145,18 @@ function ViewPanel(props) {
               </li>
             ))}
           </ul>
-          {active && (
+          {active && mountItem && (
+            <div className="plugin-view">
+              <div className="plugin-view-title">{mountItem.title}</div>
+              <PluginUiMount
+                pluginId={mountItem.pluginId}
+                extType="views"
+                extId={mountItem.id}
+                onNotify={onNotify}
+              />
+            </div>
+          )}
+          {active && !mountItem && (
             <div className="plugin-view">
               <div className="plugin-view-title">{views.find((v) => v.id === active)?.title}</div>
               <div className="plugin-view-body" dangerouslySetInnerHTML={{ __html: html }} />
@@ -1152,6 +1174,7 @@ function PanelPanel(props) {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
   const [html, setHtml] = useState('');
+  const [mountItem, setMountItem] = useState(null);
   const [rendering, setRendering] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -1178,6 +1201,14 @@ function PanelPanel(props) {
       setActive(panel.id);
       setRendering(true);
       setHtml('');
+      setMountItem(null);
+      // 优先 mountEl UI（插件声明 ui）；否则回退 HTML 快照
+      const ui = await hasUi(panel.pluginId);
+      if (ui) {
+        setMountItem(panel);
+        setRendering(false);
+        return;
+      }
       const res = await api.panels.render(panel.id, {});
       setRendering(false);
       if (res.ok) {
@@ -1215,7 +1246,18 @@ function PanelPanel(props) {
               </li>
             ))}
           </ul>
-          {active && (
+          {active && mountItem && (
+            <div className="plugin-view">
+              <div className="plugin-view-title">{mountItem.title}</div>
+              <PluginUiMount
+                pluginId={mountItem.pluginId}
+                extType="panels"
+                extId={mountItem.id}
+                onNotify={onNotify}
+              />
+            </div>
+          )}
+          {active && !mountItem && (
             <div className="plugin-view">
               <div className="plugin-view-title">{panels.find((p) => p.id === active)?.title}</div>
               <div className="plugin-view-body" dangerouslySetInnerHTML={{ __html: html }} />
@@ -1233,6 +1275,7 @@ function EditorPanel(props) {
   const [loading, setLoading] = useState(true);
   const [active, setActive] = useState(null);
   const [html, setHtml] = useState('');
+  const [mountItem, setMountItem] = useState(null);
   const [rendering, setRendering] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -1259,6 +1302,14 @@ function EditorPanel(props) {
       setActive(editor.id);
       setRendering(true);
       setHtml('');
+      setMountItem(null);
+      // 优先 mountEl UI（插件声明 ui）；否则回退 HTML 快照
+      const ui = await hasUi(editor.pluginId);
+      if (ui) {
+        setMountItem(editor);
+        setRendering(false);
+        return;
+      }
       const res = await api.editors.render(editor.id, {});
       setRendering(false);
       if (res.ok) {
@@ -1296,7 +1347,18 @@ function EditorPanel(props) {
               </li>
             ))}
           </ul>
-          {active && (
+          {active && mountItem && (
+            <div className="plugin-view">
+              <div className="plugin-view-title">{mountItem.title}</div>
+              <PluginUiMount
+                pluginId={mountItem.pluginId}
+                extType="editors"
+                extId={mountItem.id}
+                onNotify={onNotify}
+              />
+            </div>
+          )}
+          {active && !mountItem && (
             <div className="plugin-view">
               <div className="plugin-view-title">{editors.find((e) => e.id === active)?.title}</div>
               <div className="plugin-view-body" dangerouslySetInnerHTML={{ __html: html }} />

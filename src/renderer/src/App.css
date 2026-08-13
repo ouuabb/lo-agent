@@ -558,6 +558,23 @@ select {
   overflow: auto;
 }
 
+.plugin-mount-host,
+.plugin-mount {
+  padding: 12px;
+  font-size: 13px;
+  min-height: 24px;
+}
+
+.plugin-mount button {
+  margin-right: 8px;
+}
+
+.plugin-mount .out {
+  margin-top: 8px;
+  font-family: ui-monospace, Consolas, monospace;
+  word-break: break-all;
+}
+
 /* ---- 插件管理面板 ---- */
 .plugin-list {
   list-style: none;

@@ -110,6 +110,9 @@ lo-agent 作为插件 Host，加载 `{userData}/plugins/<plugin-id>/` 下的客�
   `PluginManager.renderView` 交付渲染进程挂载（`dangerouslySetInnerHTML`）
 - **面板/编辑器**：`ctx.extensions.registerPanel` / `registerEditor` 注册（area: sidebar/bottom；
   resourceType 绑定资源类型），`PluginManager.renderPanel` / `renderEditor` 同构交付渲染进程
+- **mountEl UI（渲染端）**：插件 `manifest.ui`（自包含 ESM）在渲染进程 **isolated world**
+  中执行 `render(mountEl, ctx)` 挂载真实 DOM；worldId 由 Host 分配；ctx 经 `agent-plugins:ctx`
+  代理到主进程插件 `context.lo`（Phase B 权限裁决）；未声明 `ui` 的插件保留 HTML 快照模式
 - **插件服务**：插件经 `ctx.extensions.registerServices([...])` 注册服务（含 api，如状态服务），
   其他插件经 `ctx.extensions.getService(id)` / `listServices()` 消费（插件间通信）；
   提供者停用/禁用时服务从注册表清理

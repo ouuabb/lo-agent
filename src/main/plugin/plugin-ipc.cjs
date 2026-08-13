@@ -18,6 +18,8 @@ const CHANNELS = {
   RENDER_PANEL: 'agent-plugins:render-panel',
   LIST_EDITORS: 'agent-plugins:list-editors',
   RENDER_EDITOR: 'agent-plugins:render-editor',
+  GET_UI_MODULE: 'agent-plugins:get-ui-module',
+  CTX: 'agent-plugins:ctx',
   INSTALL: 'agent-plugins:install',
   LIST_PLUGINS: 'agent-plugins:list-plugins',
   ENABLE: 'agent-plugins:enable',
@@ -107,6 +109,37 @@ function registerPluginIpc(ipcMain, pluginManager) {
       if (!pluginManager) throw new Error('插件系统未初始化');
       const result = await pluginManager.renderEditor(editorId, context || {});
       return { ok: true, editor: result };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 读取插件渲染端入口源码（mountEl UI）+ 分配 worldId（渲染进程 isolated world 加载）
+  ipcMain.handle(CHANNELS.GET_UI_MODULE, async (_event, pluginId) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      const result = await pluginManager.getUiModule(pluginId);
+      return { ok: true, source: result.source, worldId: result.worldId };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  // 渲染端插件 UI 的 ctx 能力代理（renderer → main → 插件既有 context.lo facade 裁决）
+  ipcMain.handle(CHANNELS.CTX, async (_event, payload) => {
+    try {
+      if (!pluginManager) throw new Error('插件系统未初始化');
+      if (!payload || typeof payload !== 'object' || typeof payload.pluginId !== 'string') {
+        throw new Error('ctx payload 非法');
+      }
+      const result = await pluginManager.invokePluginUiCtx({
+        pluginId: payload.pluginId,
+        target: payload.target,
+        ns: payload.ns,
+        method: payload.method,
+        args: Array.isArray(payload.args) ? payload.args : [],
+      });
+      return { ok: true, result };
     } catch (e) {
       return { ok: false, error: e.message };
     }

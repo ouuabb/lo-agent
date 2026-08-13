@@ -15,6 +15,8 @@ const { PluginLoader } = require('./plugin-loader.cjs');
 const { createLoImpl } = require('./lo-adapter.cjs');
 const { PluginInstaller } = require('./plugin-installer.cjs');
 const { resolveActivationOrder } = require('./activation-order.cjs');
+const fs = require('fs');
+const path = require('path');
 const {
   fromHost,
   AgentPluginContext,
@@ -45,6 +47,10 @@ class PluginManager {
     this.installer = new PluginInstaller(options.pluginsDir);
     /** @type {Map<string, { plugin, manifest, dir, state, enabled }>} */
     this._registry = new Map();
+    /** @type {Map<string, number>} pluginId → isolated worldId（渲染端 UI，Host 统一分配） */
+    this._uiWorldIds = new Map();
+    /** 渲染端 isolated worldId 分配游标（1000+ 起，避开 Electron 保留 world） */
+    this._uiWorldCounter = 0;
   }
 
   /** 扫描并加载全部插件（发现 → 加载 → 实例化） */
@@ -138,6 +144,7 @@ class PluginManager {
     if (this.extensionRegistry) {
       this.extensionRegistry.unregisterByPlugin(id);
     }
+    this.releaseUiWorldId(id);
     this._registry.delete(id);
   }
 
@@ -208,6 +215,81 @@ class PluginManager {
   listServices() {
     if (!this.extensionRegistry) return [];
     return this.extensionRegistry.listServices();
+  }
+
+  // ── 渲染端 UI（mountEl / isolated world） ──
+
+  /**
+   * 分配/复用插件渲染端 isolated worldId（Host 统一管理，插件不得自行指定）
+   * @param {string} pluginId
+   * @returns {number} worldId（1000+）
+   */
+  getUiWorldId(pluginId) {
+    if (this._uiWorldIds.has(pluginId)) return this._uiWorldIds.get(pluginId);
+    const worldId = 1000 + this._uiWorldCounter++;
+    this._uiWorldIds.set(pluginId, worldId);
+    return worldId;
+  }
+
+  /** 释放插件渲染端 worldId（禁用/销毁时） */
+  releaseUiWorldId(pluginId) {
+    this._uiWorldIds.delete(pluginId);
+  }
+
+  /**
+   * 读取插件渲染端入口（manifest.ui）源码，供渲染进程 isolated world 加载
+   * @param {string} pluginId
+   * @returns {{ source: string, worldId: number }}
+   */
+  getUiModule(pluginId) {
+    const entry = this._registry.get(pluginId);
+    if (!entry) throw new Error(`插件未加载: ${pluginId}`);
+    const ui = entry.manifest && entry.manifest.ui;
+    if (!ui) throw new Error(`插件未声明 ui: ${pluginId}`);
+    const target = path.resolve(entry.dir, ui);
+    const base = path.resolve(entry.dir);
+    if (!target.startsWith(base + path.sep)) {
+      throw new Error(`ui 路径越界: ${ui}`);
+    }
+    if (!fs.existsSync(target)) {
+      throw new Error(`ui 入口不存在: ${ui}`);
+    }
+    return { source: fs.readFileSync(target, 'utf8'), worldId: this.getUiWorldId(pluginId) };
+  }
+
+  /**
+   * 渲染端插件 UI 的 ctx 能力代理（renderer → main）。
+   * 复用插件主进程既有 context（ctx.lo facade 权限裁决），不新增能力映射。
+   * @param {object} payload
+   * @param {string} payload.pluginId
+   * @param {'lo'|'config'|'executeCommand'} payload.target
+   * @param {string} payload.method
+   * @param {string} [payload.ns] — target='lo' 时的命名空间（operations/relations/events/resources/health）
+   * @param {unknown[]} [payload.args]
+   */
+  async invokePluginUiCtx({ pluginId, target, ns, method, args = [] }) {
+    const entry = this._registry.get(pluginId);
+    if (!entry) throw new Error(`插件未加载: ${pluginId}`);
+    if (entry.state !== 'activated') throw new Error(`插件未激活: ${pluginId}`);
+    const ctx = entry.plugin.context;
+    if (target === 'lo') {
+      const ALLOWED_NS = ['operations', 'relations', 'events', 'resources', 'health'];
+      if (!ALLOWED_NS.includes(ns)) throw new Error(`未知 lo 命名空间: ${ns}`);
+      const lo = ctx && ctx.lo;
+      const fn = lo && lo[ns] && lo[ns][method];
+      if (typeof fn !== 'function') throw new Error(`ctx.lo.${ns}.${method} 不存在`);
+      return fn(...args);
+    }
+    if (target === 'config') {
+      if (method !== 'config') throw new Error(`未知 config 方法: ${method}`);
+      return ctx.config(...args);
+    }
+    if (target === 'executeCommand') {
+      if (method !== 'execute') throw new Error(`未知 executeCommand 方法: ${method}`);
+      const [commandId, cmdArgs] = args;
+      return this.executeCommand(commandId, Array.isArray(cmdArgs) ? cmdArgs : []);
+    }
+    throw new Error(`未知 ctx target: ${target}`);
   }
 
   /**
@@ -303,6 +385,7 @@ class PluginManager {
     if (this.extensionRegistry) {
       this.extensionRegistry.unregisterByPlugin(id);
     }
+    this.releaseUiWorldId(id);
     if (entry.state === 'activated') {
       if (typeof entry.plugin.deactivate === 'function') {
         await entry.plugin.deactivate();
