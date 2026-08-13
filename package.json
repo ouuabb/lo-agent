@@ -11,6 +11,8 @@
     "dev:electron": "cross-env ELECTRON_RENDERER_URL=http://localhost:5173 electron .",
     "build": "vite build",
     "test": "cross-env NODE_OPTIONS=--experimental-vm-modules jest --passWithNoTests",
+    "docs": "node scripts/docs-gen.cjs",
+    "docs:check": "node scripts/docs-check.cjs",
     "lint": "eslint \"src/**/*.{cjs,mjs,jsx}\" \"test/**/*.cjs\"",
     "format": "prettier --write \"src/**/*.{cjs,mjs,jsx}\" \"test/**/*.cjs\"",
     "prepare": "husky"
