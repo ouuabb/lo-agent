@@ -18,6 +18,7 @@ const CHANNELS = {
   RENDER_PANEL: 'agent-plugins:render-panel',
   LIST_EDITORS: 'agent-plugins:list-editors',
   RENDER_EDITOR: 'agent-plugins:render-editor',
+  LIST_SERVICES: 'agent-plugins:list-services',
   GET_UI_MODULE: 'agent-plugins:get-ui-module',
   CTX: 'agent-plugins:ctx',
   INSTALL: 'agent-plugins:install',
@@ -101,6 +102,12 @@ function registerPluginIpc(ipcMain, pluginManager) {
       .listEditors()
       .map((e) => ({ id: e.id, title: e.title, resourceType: e.resourceType, pluginId: e.pluginId }));
     return { ok: true, editors };
+  });
+
+  // 列出已注册服务（只读元信息，不含 api，供管理面板展示）
+  ipcMain.handle(CHANNELS.LIST_SERVICES, () => {
+    if (!pluginManager || !pluginManager.extensionRegistry) return { ok: true, services: [] };
+    return { ok: true, services: pluginManager.extensionRegistry.listServices() };
   });
 
   // 渲染编辑器 → HTML

@@ -59,6 +59,8 @@ describe('src/preload/index.cjs', () => {
     expect(api.plugins.views.render).toBeDefined();
     expect(api.plugins.panels).toBeDefined();
     expect(api.plugins.editors).toBeDefined();
+    expect(api.plugins.services).toBeDefined();
+    expect(api.plugins.services.list).toBeDefined();
     expect(api.plugins.getUi).toBeDefined();
     expect(api.plugins.install).toBeDefined();
     expect(api.plugins.manage).toBeDefined();

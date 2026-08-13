@@ -746,6 +746,8 @@ function PluginPanel(props) {
   const [installId, setInstallId] = useState('');
   const [registryUrl, setRegistryUrl] = useState('');
   const [installing, setInstalling] = useState(false);
+  const [services, setServices] = useState([]);
+  const [servicesLoading, setServicesLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     const api = window.loAgent && window.loAgent.plugins;
@@ -761,9 +763,20 @@ function PluginPanel(props) {
     else if (onNotify) onNotify(`获取插件列表失败: ${res.error}`);
   }, [onNotify]);
 
+  const refreshServices = useCallback(async () => {
+    const api = window.loAgent && window.loAgent.plugins;
+    if (!api || !api.services) return;
+    setServicesLoading(true);
+    const res = await api.services.list();
+    setServicesLoading(false);
+    if (res.ok) setServices(res.services || []);
+    else if (onNotify) onNotify(`获取服务清单失败: ${res.error}`);
+  }, [onNotify]);
+
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    refreshServices();
+  }, [refresh, refreshServices]);
 
   const toggle = useCallback(
     async (p) => {
@@ -1034,6 +1047,29 @@ function PluginPanel(props) {
                     </div>
                   </div>
                 )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="panel-card">
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 style={{ margin: 0, fontSize: 14 }}>已注册服务</h3>
+          <button className="btn ghost" onClick={refreshServices} disabled={servicesLoading}>
+            {servicesLoading ? '加载中…' : '刷新'}
+          </button>
+        </div>
+        {services.length === 0 ? (
+          <p className="empty">暂无插件服务</p>
+        ) : (
+          <ul className="command-list">
+            {services.map((s) => (
+              <li key={s.id} className="command-item">
+                <div className="command-info">
+                  <span className="command-title">{s.title}</span>
+                  <span className="muted">{s.id} · v{s.version} · {s.pluginId}</span>
+                </div>
               </li>
             ))}
           </ul>

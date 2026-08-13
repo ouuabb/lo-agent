@@ -1,17 +1,18 @@
 const { registerPluginIpc, CHANNELS } = require('../../src/main/plugin/plugin-ipc.cjs');
 
-function makeRegistry(commands, views = [], panels = [], editors = []) {
+function makeRegistry(commands, views = [], panels = [], editors = [], services = []) {
   return {
     listCommands: jest.fn(() => commands),
     listViews: jest.fn(() => views),
     listPanels: jest.fn(() => panels),
     listEditors: jest.fn(() => editors),
+    listServices: jest.fn(() => services),
   };
 }
 
-function makePluginManager(commands = [], views = [], panels = [], editors = []) {
+function makePluginManager(commands = [], views = [], panels = [], editors = [], services = []) {
   const pm = {
-    extensionRegistry: makeRegistry(commands, views, panels, editors),
+    extensionRegistry: makeRegistry(commands, views, panels, editors, services),
     executeCommand: jest.fn(),
     renderView: jest.fn(),
     renderPanel: jest.fn(),
@@ -251,6 +252,30 @@ describe('registerPluginIpc', () => {
     const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_EDITORS)[1];
     const res = await handler();
     expect(res).toEqual({ ok: true, editors: [] });
+  });
+
+  it('LIST_SERVICES 返回服务清单（元信息，不含 api）', async () => {
+    const ipcMain = { handle: jest.fn() };
+    const pm = makePluginManager([], [], [], [], [
+      { id: 'demo.ping', title: 'Ping', version: '1.0.0', pluginId: 'demo' },
+    ]);
+    registerPluginIpc(ipcMain, pm);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_SERVICES)[1];
+
+    const res = await handler();
+    expect(res.ok).toBe(true);
+    expect(res.services).toEqual([
+      { id: 'demo.ping', title: 'Ping', version: '1.0.0', pluginId: 'demo' },
+    ]);
+    expect(res.services.every((s) => typeof s.api === 'undefined')).toBe(true);
+  });
+
+  it('无插件系统时 LIST_SERVICES 返回空清单', async () => {
+    const ipcMain = { handle: jest.fn() };
+    registerPluginIpc(ipcMain, null);
+    const handler = ipcMain.handle.mock.calls.find(([c]) => c === CHANNELS.LIST_SERVICES)[1];
+    const res = await handler();
+    expect(res).toEqual({ ok: true, services: [] });
   });
 
   it('RENDER_EDITOR 委托 pluginManager.renderEditor 并返回 HTML', async () => {
