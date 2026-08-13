@@ -118,6 +118,9 @@ lo-agent 作为插件 Host，加载 `{userData}/plugins/<plugin-id>/` 下的客�
   提供者停用/禁用时服务从注册表清理
 - **依赖与激活顺序**：插件 `manifest.dependsOn` 声明依赖插件的 ID；
   `activateAll` 按依赖拓扑排序激活（提供者先于消费者），循环依赖时稳定兜底
+- **延迟激活**：`manifest.activationEvents` 仅含 `onCommand:<id>`/`onView:<id>`/`onPanel:<id>`/`onEditor:<id>`
+  的插件启动不激活，宿主在首次执行/渲染对应能力时懒激活（`onStartup`/`*` 或未声明 → 启动激活）；
+  `dependsOn` 硬依赖会强制先激活被依赖方
 - **权限模型**：`ctx.lo` 按 `manifest.permissions.lo` 白名单过滤，未授权方法抛错；
   默认只读，写操作需显式声明（`resolvePermissions` 解析，最小权限）
 - **安装 / 生命周期管理**：`PluginInstaller` 经分发仓库 index.json 下载→校验 checksum→解压→

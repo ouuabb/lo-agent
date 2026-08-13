@@ -51,6 +51,8 @@ class PluginManager {
     this._uiWorldIds = new Map();
     /** 渲染端 isolated worldId 分配游标（1000+ 起，避开 Electron 保留 world） */
     this._uiWorldCounter = 0;
+    /** 激活中的插件集合（循环依赖保护） */
+    this._activating = new Set();
   }
 
   /** 扫描并加载全部插件（发现 → 加载 → 实例化） */
@@ -67,15 +69,19 @@ class PluginManager {
     const entry = this._registry.get(id);
     if (!entry) throw new Error(`插件未加载: ${id}`);
     if (entry.state === 'activated') return;
-
-    const ctx = this._createContext(entry);
-    if (typeof entry.plugin.$setContext === 'function') {
-      entry.plugin.$setContext(ctx);
-    } else {
-      entry.plugin.context = ctx;
-    }
+    // 硬依赖（dependsOn）先激活：即使被依赖方声明了延迟激活也强制先激活
+    await this._ensureDepsActivated(entry);
+    if (this._activating.has(id)) return; // 循环依赖保护
+    this._activating.add(id);
 
     try {
+      const ctx = this._createContext(entry);
+      if (typeof entry.plugin.$setContext === 'function') {
+        entry.plugin.$setContext(ctx);
+      } else {
+        entry.plugin.context = ctx;
+      }
+
       await entry.plugin.activate(ctx);
       entry.state = 'activated';
       // 收集插件 contributes → 注册扩展点（纯数据）
@@ -86,11 +92,54 @@ class PluginManager {
     } catch (e) {
       console.error(`[plugin] 激活失败 ${id}: ${e.message}`);
       throw e;
+    } finally {
+      this._activating.delete(id);
+    }
+  }
+
+  /** 确保 manifest.dependsOn 声明的依赖已激活（无环保护） */
+  async _ensureDepsActivated(entry) {
+    const deps = Array.isArray(entry.manifest && entry.manifest.dependsOn)
+      ? entry.manifest.dependsOn
+      : [];
+    for (const dep of deps) {
+      const d = this._registry.get(dep);
+      if (d && d.state !== 'activated' && !this._activating.has(dep)) {
+        await this.activate(dep);
+      }
+    }
+  }
+
+  /** 是否延迟激活（仅含 onCommand/onView/onPanel/onEditor 触发点） */
+  _isLazy(entry) {
+    const ev = entry.manifest && entry.manifest.activationEvents;
+    if (!Array.isArray(ev) || ev.length === 0) return false;
+    return !ev.some((t) => t === 'onStartup' || t === '*');
+  }
+
+  /**
+   * 按触发点激活匹配的延迟激活插件（如 onCommand:<id> → 激活声明该触发点的插件）
+   * @param {'onCommand'|'onView'|'onPanel'|'onEditor'} prefix
+   * @param {string} id
+   */
+  async _activateForTrigger(prefix, id) {
+    const trigger = `${prefix}:${id}`;
+    for (const entry of this._registry.values()) {
+      if (entry.state !== 'loaded') continue;
+      const ev = entry.manifest && entry.manifest.activationEvents;
+      if (Array.isArray(ev) && ev.includes(trigger)) {
+        try {
+          await this.activate(entry.id);
+        } catch (e) {
+          console.error(`[plugin] 触发激活失败 ${entry.id}: ${e.message}`);
+        }
+      }
     }
   }
 
   /**
-   * 激活全部已加载插件（按 manifest.dependsOn 依赖拓扑排序：提供者先激活）
+   * 激活全部已加载插件（按 manifest.dependsOn 依赖拓扑排序：提供者先激活；
+   * 声明延迟激活（activationEvents 仅含 onCommand/onView/onPanel/onEditor）的插件跳过，按触发点懒激活）
    */
   async activateAll() {
     const entries = Array.from(this._registry.values()).map((e) => ({
@@ -102,6 +151,8 @@ class PluginManager {
       console.warn(`[plugin] 依赖循环或缺失，按原顺序激活: ${id}`);
     }
     for (const id of ordered) {
+      const entry = this._registry.get(id);
+      if (entry && this._isLazy(entry)) continue; // 延迟激活插件启动不激活
       try {
         await this.activate(id);
       } catch (e) {
@@ -511,12 +562,31 @@ class PluginManager {
     return this.extensionRegistry.registerEditors(pluginId, defs);
   }
 
+  /**
+   * 查找能力；缺失时按触发点懒激活匹配插件后重试（延迟激活支持）
+   * @param {(id: string) => object|null} getter
+   * @param {'onCommand'|'onView'|'onPanel'|'onEditor'} prefix
+   * @param {string} id
+   */
+  async _findOrTrigger(getter, prefix, id) {
+    let item = getter(id);
+    if (!item) {
+      await this._activateForTrigger(prefix, id);
+      item = getter(id);
+    }
+    return item;
+  }
+
   /** 渲染插件面板（同视图渲染快照模型：render 返回 HTML，经 IPC 交付渲染进程） */
   async renderPanel(panelId, context = {}) {
     if (!this.extensionRegistry) {
       throw new Error('extensionRegistry 未注入，无法渲染面板');
     }
-    const panel = this.extensionRegistry.getPanel(panelId);
+    const panel = await this._findOrTrigger(
+      (x) => this.extensionRegistry.getPanel(x),
+      'onPanel',
+      panelId,
+    );
     if (!panel) {
       throw new Error(`面板不存在: ${panelId}`);
     }
@@ -536,7 +606,11 @@ class PluginManager {
     if (!this.extensionRegistry) {
       throw new Error('extensionRegistry 未注入，无法渲染编辑器');
     }
-    const editor = this.extensionRegistry.getEditor(editorId);
+    const editor = await this._findOrTrigger(
+      (x) => this.extensionRegistry.getEditor(x),
+      'onEditor',
+      editorId,
+    );
     if (!editor) {
       throw new Error(`编辑器不存在: ${editorId}`);
     }
@@ -567,7 +641,11 @@ class PluginManager {
     if (!this.extensionRegistry) {
       throw new Error('extensionRegistry 未注入，无法渲染视图');
     }
-    const view = this.extensionRegistry.getView(viewId);
+    const view = await this._findOrTrigger(
+      (x) => this.extensionRegistry.getView(x),
+      'onView',
+      viewId,
+    );
     if (!view) {
       throw new Error(`视图不存在: ${viewId}`);
     }
@@ -592,7 +670,11 @@ class PluginManager {
     if (!this.extensionRegistry) {
       throw new Error('extensionRegistry 未注入，无法执行命令');
     }
-    const cmd = this.extensionRegistry.getCommand(commandId);
+    const cmd = await this._findOrTrigger(
+      (x) => this.extensionRegistry.getCommand(x),
+      'onCommand',
+      commandId,
+    );
     if (!cmd) {
       throw new Error(`命令不存在: ${commandId}`);
     }

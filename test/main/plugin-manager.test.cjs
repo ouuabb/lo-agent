@@ -561,6 +561,111 @@ describe('PluginManager', () => {
     expect(() => pm.getUiModule('no-ui')).toThrow(/未声明 ui/);
   });
 
+  it('延迟激活：activationEvents onCommand/onView 懒激活，activateAll 跳过', async () => {
+    const dir = makePluginsDir();
+    const pDir = writePlugin(dir, 'lazy-a', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'lazy-a', name: 'Lazy A', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          this._activated = true;
+          ctx.extensions.registerCommands([{ id: 'lazy-a.run', title: 'Run', handler: async () => 'ran' }]);
+          ctx.extensions.registerView([{ id: 'lazy-a.view', title: 'View', type: 'panel', render: async () => '<p>lazy-view</p>' }]);
+        }
+      }
+      module.exports = P;
+    `);
+    fs.writeFileSync(
+      path.join(pDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'lazy-a', name: 'Lazy A', version: '0.1.0', main: 'index.cjs',
+        activationEvents: ['onCommand:lazy-a.run', 'onView:lazy-a.view'],
+        contributes: {
+          commands: [{ id: 'lazy-a.run', title: 'Run' }],
+          views: [{ id: 'lazy-a.view', title: 'View', type: 'panel' }],
+        },
+      }),
+    );
+
+    const reg = new ExtensionRegistry();
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: reg,
+    });
+    await pm.initialize();
+    await pm.activateAll();
+
+    // 启动不激活（懒）
+    expect(pm.get('lazy-a')._activated).toBeUndefined();
+    expect(pm.list().find((x) => x.id === 'lazy-a').state).toBe('loaded');
+    expect(reg.getCommand('lazy-a.run')).toBeNull();
+
+    // 执行命令 → onCommand 懒激活 → 重试成功
+    const res = await pm.executeCommand('lazy-a.run', []);
+    expect(res.result).toBe('ran');
+    expect(pm.get('lazy-a')._activated).toBe(true);
+    expect(reg.getCommand('lazy-a.run')).not.toBeNull();
+
+    // 渲染视图 → onView 懒激活（已激活则直接渲染）
+    const viewRes = await pm.renderView('lazy-a.view', {});
+    expect(viewRes.html).toContain('lazy-view');
+  });
+
+  it('延迟激活：dependsOn 硬依赖强制先激活延迟插件', async () => {
+    const dir = makePluginsDir();
+    const svcDir = writePlugin(dir, 'lazy-svc', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'lazy-svc', name: 'Lazy Svc', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          this._activated = true;
+          ctx.extensions.registerService([{ id: 'lazy-svc.api', title: 'API', api: { ping: () => 'pong' } }]);
+        }
+      }
+      module.exports = P;
+    `);
+    fs.writeFileSync(
+      path.join(svcDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'lazy-svc', name: 'Lazy Svc', version: '0.1.0', main: 'index.cjs',
+        activationEvents: ['onCommand:lazy-svc.run'],
+      }),
+    );
+    const consumerDir = writePlugin(dir, 'lazy-consumer', `
+      const { AgentPlugin } = require(${JSON.stringify(SDK_INDEX)});
+      class P extends AgentPlugin {
+        manifest() { return { id: 'lazy-consumer', name: 'Lazy Consumer', version: '0.1.0', main: 'index.cjs' }; }
+        async activate(ctx) {
+          const svc = ctx.extensions.getService('lazy-svc.api');
+          this._ping = svc ? svc.ping() : null;
+        }
+      }
+      module.exports = P;
+    `);
+    fs.writeFileSync(
+      path.join(consumerDir, 'plugin.json'),
+      JSON.stringify({
+        id: 'lazy-consumer', name: 'Lazy Consumer', version: '0.1.0', main: 'index.cjs',
+        dependsOn: ['lazy-svc'],
+      }),
+    );
+
+    const pm = new PluginManager({
+      pluginsDir: dir,
+      hostRequireBase: path.join(__dirname, '..', '..', 'src', 'main'),
+      loCore: makeLoCore(),
+      extensionRegistry: new ExtensionRegistry(),
+    });
+    await pm.initialize();
+    await pm.activateAll();
+
+    // dependsOn 强制懒提供者先激活，消费者 getService 能拿到服务
+    expect(pm.get('lazy-svc')._activated).toBe(true);
+    expect(pm.get('lazy-consumer')._ping).toBe('pong');
+  });
+
   it('端到端：真实 demo 插件（plugins-demo）跨插件服务消费', async () => {
     const pluginsDemoDir = path.join(__dirname, '..', '..', 'plugins-demo');
     const reg = new ExtensionRegistry();
